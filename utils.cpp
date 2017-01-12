@@ -51,7 +51,7 @@ void runAfter(boost::asio::io_service &io_service, boost::posix_time::time_durat
     });
 }
 
-int getRandomNumber() {
+std::size_t getRandomNumber() {
     static std::random_device rd;
     return rd();
 }
@@ -92,32 +92,14 @@ std::unique_ptr<BaseDecrypter> getDecrypter(const std::string &method, const std
     }
 }
 
-//static std::unordered_map<std::string, std::tuple<std::size_t, std::size_t>> keyIvLens = {
-//    {"aes-128-cfb", {16, 16}},
-//    {"aes-192-cfb", {24, 16}},
-//    {"aes-256-cfb", {32, 16}},
-//    {"des-cfb", {8, 8}},
-//    {"bf-cfb", std::tuple<std::size_t, std::size_t>(16, 8)},
-//    {"cast5-cfb", {16, 8}},
-//    {"rc4-md5", {16, 16}},
-//    {"chacha20", {32, 8}},
-//    {"salsa20", {32, 8}}
-//};
-//
-//std::size_t getKeyLen(const std::string &method) {
-//    auto it = keyIvLens.find(method);
-//    if(it == keyIvLens.end()) {
-//        return 32;
-//    } else {
-//        return std::get<0>((*it).second);
-//    }
-//}
-//
-//std::size_t getIvLen(const std::string &method) {
-//    auto it = keyIvLens.find(method);
-//    if(it == keyIvLens.end()) {
-//        return 16;
-//    } else {
-//        return std::get<1>((*it).second);
-//    }
-//}
+void plusOneSecond(boost::asio::io_service &service, boost::asio::ip::tcp::socket &&s) {
+    std::size_t n = 0;
+    std::size_t x = 0;
+    do {
+        x = getRandomNumber() % 16 + 1;
+        n += x;
+    } while(x < 3 || x > 14);
+    BOOST_LOG_TRIVIAL(trace) << "续了 " << n  << " 秒";
+    auto socket = std::make_shared<boost::asio::ip::tcp::socket>(std::move(s));
+    runAfter(service, boost::posix_time::seconds(n), [socket]{});
+}

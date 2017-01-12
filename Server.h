@@ -23,6 +23,8 @@ private:
     void async_read(char *buffer, std::size_t len, Handler handler);
     void async_write(std::size_t len, Handler handler);
     void async_write(char *buffer, std::size_t len, Handler handler);
+    void async_read_with_timeout(std::size_t length, boost::posix_time::time_duration td, Handler handler);
+    void async_read_with_timeout_1(std::size_t length, boost::posix_time::time_duration td, Handler handler);
 
 private:
     void doReadIV();
@@ -33,8 +35,10 @@ private:
     void doEstablish(std::string name, std::string port);
     void doPipe1();
     void doPipe2();
+    void destroyLater();
 
 private:
+    bool destroyLater_ = true;
     char buf[4096];
     char rbuf[16384];
     Config &config_;

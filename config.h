@@ -18,6 +18,7 @@ extern bool IsQuietMode;
 extern bool ShowVersion;
 extern bool ShowHelpMessage;
 extern std::unordered_set<std::string> ForbiddenIPAddresses;
+extern std::unordered_map<std::string, int> EvilIPAddresses;
 
 class Config final {
 public:
@@ -31,6 +32,7 @@ public:
     bool IsOta = false;
     bool IsFastOpen = false;
     bool PreferIPv6 = false;
+    bool AutoBan = false;
 };
 
 static inline bool operator==(const Config &left, const Config &right) {

@@ -18,6 +18,7 @@ bool IsQuietMode;
 bool ShowVersion;
 bool ShowHelpMessage;
 std::unordered_set<std::string> ForbiddenIPAddresses;
+std::unordered_map<std::string, int> EvilIPAddresses;
 
 void testJson() {
     auto j = json::parse("{\"hello\":\"world\"}");
@@ -56,6 +57,7 @@ std::vector<Config> parseCmdline(int argc, char **argv) {
                                   }
                               }
                           }},
+        {"--auto-ban",    [&] { config.AutoBan = true; }},
         {"--prefer-ipv6", [&] { config.PreferIPv6 = true; }},
         {"-h",            [&] { ShowHelpMessage = true; }},
         {"--help",        [&] { ShowHelpMessage = true; }},
@@ -69,7 +71,7 @@ std::vector<Config> parseCmdline(int argc, char **argv) {
         {"",              [&] {}}};
     std::unordered_set<std::string> ons = {
         "-a", "--fast-open", "-h", "--help", "--prefer-ipv6",
-        "-v", "-vv", "-q", "-qq", "--version",
+        "-v", "-vv", "-q", "-qq", "--version", "--auto-ban",
         ""};
     auto size = cmdlines.size();
     for (size_t i = 0; i < size; i++) {
@@ -168,6 +170,12 @@ std::vector<Config> parseCmdline(int argc, char **argv) {
                                   config.IsFastOpen = fast_open;
                               }
                           }},
+        {"autoban",       [&](json_type value) {
+            if (value.is_boolean()) {
+                auto autoban = value.get<bool>();
+                config.AutoBan = autoban;
+            }
+        }},
         {"forbidden_ips", [&](json_type value) {
             if (value.is_array()) {
                 for (auto it = value.cbegin(); it != value.cend(); ++it) {
