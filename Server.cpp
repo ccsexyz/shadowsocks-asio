@@ -157,8 +157,8 @@ void ServerSession::doGetRequest() {
 
 void ServerSession::doGetIPv4Request() {
     auto self = shared_from_this();
-    async_read(lenIPv4, [this, self](boost::system::error_code ec,
-                                     std::size_t length) {
+    async_read(lenIPv4 + lenPort, [this, self](boost::system::error_code ec,
+                                               std::size_t length) {
         if (ec) {
             return;
         }
@@ -177,7 +177,7 @@ void ServerSession::doGetIPv4Request() {
 void ServerSession::doGetIPv6Request() {
     auto self = shared_from_this();
     async_read_with_timeout_1(
-        lenIPv6, boost::posix_time::seconds(1),
+        lenIPv6 + lenPort, boost::posix_time::seconds(1),
         [this, self](boost::system::error_code ec, std::size_t length) {
             if (ec) {
                 return;
@@ -231,26 +231,65 @@ void ServerSession::doEstablish(std::string name, std::string port) {
             if (ec) {
                 return;
             }
-            rsocket_.async_connect(
-                *iterator, [this, self](boost::system::error_code ec) {
-                    LOG_TRACE
+            rsocket_.async_connect(*iterator,
+                                   [this, self](boost::system::error_code ec) {
+                                       LOG_TRACE
+                                       if (ec) {
+                                           return;
+                                       }
+                                       destroyLater_ = false;
+                                       doPipe1();
+                                       doWriteIV();
+                                       //                    auto iv =
+                                       //                    enc_->getIV();
+                                       //                    // FIXME
+                                       //                    std::copy(iv.begin(),
+                                       //                    iv.end(),
+                                       //                    std::begin(buf));
+                                       //                    boost::asio::async_write(
+                                       //                        socket_,
+                                       //                        boost::asio::buffer(buf,
+                                       //                        iv.length()),
+                                       //                        [this,
+                                       //                        self](boost::system::error_code
+                                       //                        ec,
+                                       //                                     std::size_t
+                                       //                                     length)
+                                       //                                     {
+                                       //                            LOG_TRACE
+                                       //                            if (ec) {
+                                       //                                return;
+                                       //                            }
+                                       //                            doPipe1();
+                                       //                            doPipe2();
+                                       //                        });
+                                   });
+        });
+}
+
+void ServerSession::doWriteIV() {
+    auto self = shared_from_this();
+    auto ivlen = enc_->getIvLen();
+    rsocket_.async_read_some(
+        boost::asio::buffer(rbuf, sizeof(rbuf) - ivlen),
+        [this, self](boost::system::error_code ec, std::size_t length) {
+            if (ec) {
+                socket_.cancel(ec);
+                return;
+            }
+            auto dst = enc_->encrypt(std::string(rbuf, length));
+            auto iv = enc_->getIV();
+            std::copy_n(iv.begin(), iv.length(), std::begin(rbuf));
+            std::copy_n(dst.begin(), dst.length(),
+                        std::begin(rbuf) + iv.length());
+            boost::asio::async_write(
+                socket_, boost::asio::buffer(rbuf, iv.length() + dst.length()),
+                [this, self](boost::system::error_code ec, std::size_t length) {
                     if (ec) {
+                        rsocket_.cancel(ec);
                         return;
                     }
-                    destroyLater_ = false;
-                    auto iv = enc_->getIV();
-                    std::copy(iv.begin(), iv.end(), std::begin(buf));
-                    boost::asio::async_write(
-                        socket_, boost::asio::buffer(buf, iv.length()),
-                        [this, self](boost::system::error_code ec,
-                                     std::size_t length) {
-                            LOG_TRACE
-                            if (ec) {
-                                return;
-                            }
-                            doPipe1();
-                            doPipe2();
-                        });
+                    doPipe2();
                 });
         });
 }

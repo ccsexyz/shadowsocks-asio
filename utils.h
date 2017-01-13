@@ -42,8 +42,9 @@ const int typeIPv4 = 1;
 const int typeDm = 3;
 const int typeIPv6 = 4;
 
-const int lenIPv4 = 6;
-const int lenIPv6 = 18;
+const int lenIPv4 = 4;
+const int lenIPv6 = 16;
+const int lenPort = 2;
 
 #define LOG_TRACE                                                              \
 //    std::cout << __FILE__ << " " << __func__ << " " << __LINE__ << std::endl;
@@ -100,5 +101,7 @@ make_unique(Args &&...) = delete;
 
 void plusOneSecond(boost::asio::io_service &service,
                    boost::asio::ip::tcp::socket &&s);
+
+using Handler = std::function<void(boost::system::error_code, std::size_t)>;
 
 #endif // SHADOWSOCKS_ASIO_UTILS_H

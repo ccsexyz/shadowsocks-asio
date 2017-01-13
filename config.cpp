@@ -37,6 +37,8 @@ std::vector<Config> parseCmdline(int argc, char **argv) {
         {"-c", [&] { ConfigFilePath = s; }},
         {"-s", [&] { config.ServerAddress = s; }},
         {"-p", [&] { config.ServerPort = (uint16_t)std::stoul(s); }},
+        {"-b", [&] { config.LocalAddress = s; }},
+        {"-l", [&] { config.LocalPort = (uint16_t)std::stoul(s); }},
         {"-k", [&] { config.Password = s; }},
         {"-m", [&] { config.Method = s; }},
         {"-t", [&] { config.Timeout = (uint32_t)std::stoul(s); }},

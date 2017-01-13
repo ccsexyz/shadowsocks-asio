@@ -108,14 +108,3 @@ void plusOneSecond(boost::asio::io_service &service,
     auto socket = std::make_shared<boost::asio::ip::tcp::socket>(std::move(s));
     runAfter(service, boost::posix_time::seconds(n), [socket] {});
 }
-
-static std::unordered_map<std::string, std::tuple<std::size_t, std::size_t>>
-    keyIvLens = {{"aes-128-cfb", {16, 16}},
-                 {"aes-192-cfb", {24, 16}},
-                 {"aes-256-cfb", {32, 16}},
-                 {"des-cfb", {8, 8}},
-                 {"bf-cfb", std::tuple<std::size_t, std::size_t>(16, 8)},
-                 {"cast5-cfb", {16, 8}},
-                 {"rc4-md5", {16, 16}},
-                 {"chacha20", {32, 8}},
-                 {"salsa20", {32, 8}}};

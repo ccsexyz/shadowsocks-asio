@@ -53,15 +53,16 @@ void UdpServer::handleReceive(boost::system::error_code ec,
         }
         auto ep = boost::asio::ip::udp::endpoint(
             boost::asio::ip::address_v4(ntohl(*reinterpret_cast<long *>(data))),
-            ntohs(*reinterpret_cast<uint16_t *>(data + lenIPv4 - 2)));
-        data += lenIPv4;
-        length -= lenIPv4;
+            ntohs(*reinterpret_cast<uint16_t *>(data + lenIPv4)));
+        data += lenIPv4 + lenPort;
+        length -= lenIPv4 + lenPort;
         //        if(ep.address().to_string() == "8.8.8.8") {
         //            ep =
         //            boost::asio::ip::udp::endpoint(boost::asio::ip::address_v4::from_string("223.6.6.6"),
         //            ep.port());
         //        }
-        sendDataFromLocal(ep, std::string(data - lenIPv4 - 1, lenIPv4 + 1),
+        sendDataFromLocal(ep, std::string(data - lenIPv4 - lenPort - 1,
+                                          lenIPv4 + lenPort + 1),
                           data, length);
     } else if (atyp == typeIPv6) {
         if (length <= lenIPv6) {
@@ -72,10 +73,11 @@ void UdpServer::handleReceive(boost::system::error_code ec,
         std::copy_n(data, bytes.size(), bytes.data());
         auto ep = boost::asio::ip::udp::endpoint(
             boost::asio::ip::address_v6(bytes),
-            ntohs(*reinterpret_cast<uint16_t *>(data + lenIPv6 - 2)));
-        data += lenIPv6;
-        length -= lenIPv6;
-        sendDataFromLocal(ep, std::string(data - lenIPv6 - 1, lenIPv6 + 1),
+            ntohs(*reinterpret_cast<uint16_t *>(data + lenIPv6)));
+        data += lenIPv6 + lenPort;
+        length -= lenIPv6 + lenPort;
+        sendDataFromLocal(ep, std::string(data - lenIPv6 - lenPort - 1,
+                                          lenIPv6 + lenPort + 1),
                           data, length);
     } else if (atyp == typeDm) {
         unsigned char len = data[0];
@@ -140,6 +142,7 @@ void UdpServer::doRecvDataFromRemote(boost::asio::ip::udp::endpoint ep,
                                      boost::system::error_code ec,
                                      std::size_t length) {
     if (ec) {
+        sessions_.erase(ep);
         return;
     }
     auto self = shared_from_this();
@@ -161,6 +164,7 @@ void UdpServer::doRecvDataFromRemote(boost::asio::ip::udp::endpoint ep,
         boost::asio::buffer(rbuf, ivlen), ep,
         [this, self, ep](boost::system::error_code ec, std::size_t length) {
             if (ec) {
+                sessions_.erase(ep);
                 return;
             }
             recvDataFromRemote(ep);
@@ -169,12 +173,18 @@ void UdpServer::doRecvDataFromRemote(boost::asio::ip::udp::endpoint ep,
 
 void UdpServer::recvDataFromRemote(boost::asio::ip::udp::endpoint ep) {
     auto self = shared_from_this();
+    auto dt = std::make_shared<boost::asio::deadline_timer>(
+        service_, boost::posix_time::seconds(16));
     auto it = sessions_.find(ep);
     auto &session = it->second;
     session.usocket_.async_receive_from(
         boost::asio::buffer(session.rbuf, sizeof(session.rbuf)),
         session.endpoint_,
-        [this, self, ep](boost::system::error_code ec, std::size_t length) {
+        [this, self, ep, dt](boost::system::error_code ec, std::size_t length) {
+            dt->cancel();
             doRecvDataFromRemote(ep, ec, length);
         });
+    dt->async_wait([dt, &session](const boost::system::error_code &) {
+        session.usocket_.cancel();
+    });
 }

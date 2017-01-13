@@ -4,8 +4,6 @@
 #include "config.h"
 #include "encrypt.h"
 
-using Handler = std::function<void(boost::system::error_code, std::size_t)>;
-
 class ServerSession final : public std::enable_shared_from_this<ServerSession> {
 public:
     ServerSession(boost::asio::io_service &io_service,
@@ -35,6 +33,7 @@ private:
     void doEstablish(std::string name, std::string port);
     void doPipe1();
     void doPipe2();
+    void doWriteIV();
     void destroyLater();
 
 private:
