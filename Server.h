@@ -1,7 +1,3 @@
-//
-// Created by JohnsonJohn on 2017/1/9.
-//
-
 #ifndef SHADOWSOCKS_ASIO_SERVER_H
 #define SHADOWSOCKS_ASIO_SERVER_H
 
@@ -23,8 +19,12 @@ private:
     void async_read(char *buffer, std::size_t len, Handler handler);
     void async_write(std::size_t len, Handler handler);
     void async_write(char *buffer, std::size_t len, Handler handler);
-    void async_read_with_timeout(std::size_t length, boost::posix_time::time_duration td, Handler handler);
-    void async_read_with_timeout_1(std::size_t length, boost::posix_time::time_duration td, Handler handler);
+    void async_read_with_timeout(std::size_t length,
+                                 boost::posix_time::time_duration td,
+                                 Handler handler);
+    void async_read_with_timeout_1(std::size_t length,
+                                   boost::posix_time::time_duration td,
+                                   Handler handler);
 
 private:
     void doReadIV();
@@ -63,6 +63,7 @@ private:
     boost::asio::io_service &service_;
     boost::asio::ip::tcp::socket socket_;
     boost::asio::ip::tcp::acceptor acceptor_;
+    boost::asio::ip::tcp::resolver resolver_;
 };
 
 #endif // SHADOWSOCKS_ASIO_SERVER_H

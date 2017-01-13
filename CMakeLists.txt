@@ -5,7 +5,7 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++14 -DBOOST_LOG_DYN_LINK")
 
 set(SOURCE_FILES utils.h utils.cpp config.cpp config.h json.h Server.cpp Server.h encrypt.cpp encrypt.h)
 set(MAIN_SOURCE_FILES main.cpp ${SOURCE_FILES})
-set(SSSERVER_SOURCE_FILES ssserver.cpp ${SOURCE_FILES})
+set(SSSERVER_SOURCE_FILES ssserver.cpp ${SOURCE_FILES} UdpServer.cpp UdpServer.h)
 
 add_executable(ssserver ${SSSERVER_SOURCE_FILES})
 target_link_libraries(ssserver pthread)

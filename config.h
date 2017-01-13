@@ -1,13 +1,9 @@
-//
-// Created by JohnsonJohn on 2017/1/8.
-//
-
 #ifndef SHADOWSOCKS_ASIO_CONFIG_H
 #define SHADOWSOCKS_ASIO_CONFIG_H
 
 #include "utils.h"
 
-extern bool IsOta;
+// extern bool IsOta; // I have no plan to implement one time auth
 extern bool IsFastOpen;
 extern bool IsDaemon;
 extern std::string PidFilePath;
@@ -29,7 +25,7 @@ public:
     std::string Password = "secret";
     std::string Method = "aes-256-cfb";
     std::uint32_t Timeout = 300;
-    bool IsOta = false;
+    //    bool IsOta = false;
     bool IsFastOpen = false;
     bool PreferIPv6 = false;
     bool AutoBan = false;
@@ -40,10 +36,9 @@ static inline bool operator==(const Config &left, const Config &right) {
            left.ServerPort == right.ServerPort &&
            left.LocalAddress == right.LocalAddress &&
            left.LocalPort == right.LocalPort &&
-           left.Password == right.Password &&
-           left.Method == right.Method &&
+           left.Password == right.Password && left.Method == right.Method &&
            left.Timeout == right.Timeout &&
-           left.IsOta == right.IsOta &&
+           //           left.IsOta == right.IsOta &&
            left.IsFastOpen == right.IsFastOpen &&
            left.PreferIPv6 == right.PreferIPv6;
 }

@@ -5,6 +5,10 @@
 #include <arpa/inet.h>
 #include <boost/asio.hpp>
 #include <boost/asio/signal_set.hpp>
+#include <boost/date_time/posix_time/posix_time.hpp>
+#include <boost/log/common.hpp>
+#include <boost/log/trivial.hpp>
+#include <boost/log/utility/setup/file.hpp>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
@@ -12,20 +16,16 @@
 #include <iostream>
 #include <list>
 #include <memory>
+#include <random>
 #include <streambuf>
 #include <string>
+#include <tuple>
+#include <type_traits>
 #include <unistd.h>
 #include <unordered_map>
 #include <unordered_set>
-#include <vector>
-#include <boost/log/trivial.hpp>
-#include <boost/log/common.hpp>
-#include <boost/log/utility/setup/file.hpp>
-#include <boost/date_time/posix_time/posix_time.hpp>
-#include <random>
-#include <type_traits>
 #include <utility>
-#include <tuple>
+#include <vector>
 
 namespace logging = boost::log;
 using functor = std::function<void()>;
@@ -56,20 +56,23 @@ void initLogging();
 
 bool checkAddress(std::string address);
 
-void runAfter(boost::asio::io_service &io_service, boost::posix_time::time_duration td, functor f);
+void runAfter(boost::asio::io_service &io_service,
+              boost::posix_time::time_duration td, functor f);
 
 std::size_t getRandomNumber();
 
 class BaseEncrypter;
 class BaseDecrypter;
 
-std::unique_ptr<BaseEncrypter> getEncrypter(const std::string &method, const std::string &pwd);
+std::unique_ptr<BaseEncrypter> getEncrypter(const std::string &method,
+                                            const std::string &pwd);
 
-std::unique_ptr<BaseDecrypter> getDecrypter(const std::string &method, const std::string &pwd);
+std::unique_ptr<BaseDecrypter> getDecrypter(const std::string &method,
+                                            const std::string &pwd);
 
-//std::size_t getKeyLen(const std::string &method);
+// std::size_t getKeyLen(const std::string &method);
 //
-//std::size_t getIvLen(const std::string &method);
+// std::size_t getIvLen(const std::string &method);
 
 #if __cplusplus < 201402L
 // support make_unique in c++ 11
@@ -95,6 +98,7 @@ make_unique(Args &&...) = delete;
 
 #endif
 
-void plusOneSecond(boost::asio::io_service &service, boost::asio::ip::tcp::socket &&s);
+void plusOneSecond(boost::asio::io_service &service,
+                   boost::asio::ip::tcp::socket &&s);
 
 #endif // SHADOWSOCKS_ASIO_UTILS_H
