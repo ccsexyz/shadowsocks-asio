@@ -159,22 +159,48 @@ void LocalSession::doSocks5HandleDm() {
         });
 }
 
-void LocalSession::doEstablish(std::string header) {
+void LocalSession::doEstablish(const std::string &header) {
     if (header.empty()) {
         return;
     }
+    enc_ = getEncrypter(config_.Method, config_.Password);
+    auto iv = enc_->getIV();
+    auto ivlen = enc_->getIvLen();
+    auto encHeader = enc_->encrypt(header);
+    std::copy_n(iv.begin(), ivlen, std::begin(buf));
+    std::copy_n(encHeader.begin(), encHeader.length(), std::begin(buf) + ivlen);
+    ivlen += encHeader.length();
     auto self = shared_from_this();
-    rbuf[0] = 0x5;
-    rbuf[1] = 0x0;
-    rbuf[2] = 0x0;
-    std::copy_n(header.begin(), header.length(), std::begin(rbuf) + 3);
-    boost::asio::async_write(
-        socket_, boost::asio::buffer(rbuf, 3 + header.length()),
-        [this, self, header](boost::system::error_code ec, std::size_t length) {
+    rsocket_.async_connect(
+        boost::asio::ip::tcp::endpoint(
+            boost::asio::ip::address::from_string(config_.ServerAddress),
+            config_.ServerPort),
+        [this, self, ivlen, header](boost::system::error_code ec) {
             if (ec) {
                 return;
             }
-            doWriteIV(header);
+            rbuf[0] = 0x5;
+            rbuf[1] = 0x0;
+            rbuf[2] = 0x0;
+            std::copy_n(header.begin(), header.length(), std::begin(rbuf) + 3);
+            boost::asio::async_write(
+                socket_, boost::asio::buffer(rbuf, 3 + header.length()),
+                [this, self, ivlen](boost::system::error_code ec,
+                                    std::size_t length) {
+                    if (ec) {
+                        return;
+                    }
+                    boost::asio::async_write(
+                        rsocket_, boost::asio::buffer(buf, ivlen),
+                        [this, self](boost::system::error_code ec,
+                                     std::size_t length) {
+                            if (ec) {
+                                return;
+                            }
+                            doReadIV();
+                            doPipe2();
+                        });
+                });
         });
 }
 
@@ -272,48 +298,5 @@ void LocalSession::doReadIV() {
             }
             dec_->initIV(std::string(rbuf, length));
             doPipe1();
-        });
-}
-
-void LocalSession::doWriteIV(std::string header) {
-    auto self = shared_from_this();
-    socket_.async_read_some(
-        boost::asio::buffer(buf, 4096),
-        [this, self, header](boost::system::error_code ec, std::size_t length) {
-            if (ec) {
-                return;
-            }
-            enc_ = getEncrypter(config_.Method, config_.Password);
-            auto iv = enc_->getIV();
-            auto ivlen = iv.length();
-            auto encHeader = enc_->encrypt(header);
-            auto encData = enc_->encrypt(std::string(buf, length));
-            std::copy_n(iv.begin(), iv.length(), std::begin(buf));
-            std::copy_n(encHeader.begin(), encHeader.length(),
-                        std::begin(buf) + ivlen);
-            ivlen += encHeader.length();
-            std::copy_n(encData.begin(), encData.length(),
-                        std::begin(buf) + ivlen);
-            ivlen += encData.length();
-            rsocket_.async_connect(
-                boost::asio::ip::tcp::endpoint(
-                    boost::asio::ip::address::from_string(
-                        config_.ServerAddress),
-                    config_.ServerPort),
-                [this, self, ivlen](boost::system::error_code ec) {
-                    if (ec) {
-                        return;
-                    }
-                    boost::asio::async_write(
-                        rsocket_, boost::asio::buffer(buf, ivlen),
-                        [this, self](boost::system::error_code ec,
-                                     std::size_t length) {
-                            if (ec) {
-                                return;
-                            }
-                            doReadIV();
-                            doPipe2();
-                        });
-                });
         });
 }

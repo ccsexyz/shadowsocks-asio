@@ -23,9 +23,8 @@ private:
     void doSocks5HandleIPv4();
     void doSocks5HandleIPv6();
     void doSocks5HandleDm();
-    void doEstablish(std::string header);
+    void doEstablish(const std::string &header);
     void doReadIV();
-    void doWriteIV(std::string header);
     void doPipe1();
     void doPipe2();
 

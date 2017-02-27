@@ -3,6 +3,7 @@
 #include <cryptopp/aes.h>
 #include <cryptopp/blowfish.h>
 #include <cryptopp/cast.h>
+#include <cryptopp/chacha.h>
 #include <cryptopp/des.h>
 #include <cryptopp/hex.h>
 #include <cryptopp/md5.h>
