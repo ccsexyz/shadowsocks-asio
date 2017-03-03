@@ -6,8 +6,8 @@
 
 class LocalSession final : public std::enable_shared_from_this<LocalSession> {
 public:
-    LocalSession(boost::asio::io_service &io_service,
-                 boost::asio::ip::tcp::socket &&socket, Config &config);
+    LocalSession(asio::io_service &io_service,
+                 asio::ip::tcp::socket &&socket, Config &config);
     void run();
 
 private:
@@ -34,15 +34,15 @@ private:
     Config &config_;
     std::unique_ptr<BaseEncrypter> enc_;
     std::unique_ptr<BaseDecrypter> dec_;
-    boost::asio::io_service &service_;
-    boost::asio::ip::tcp::socket socket_;
-    boost::asio::ip::tcp::socket rsocket_;
-    boost::asio::ip::tcp::resolver resolver_;
+    asio::io_service &service_;
+    asio::ip::tcp::socket socket_;
+    asio::ip::tcp::socket rsocket_;
+    asio::ip::tcp::resolver resolver_;
 };
 
 class Local final : public std::enable_shared_from_this<Local> {
 public:
-    Local(boost::asio::io_service &io_service, const Config &config);
+    Local(asio::io_service &io_service, const Config &config);
     void run();
 
 private:
@@ -50,10 +50,10 @@ private:
 
 private:
     Config config_;
-    boost::asio::io_service &service_;
-    boost::asio::ip::tcp::socket socket_;
-    boost::asio::ip::tcp::acceptor acceptor_;
-    boost::asio::ip::tcp::resolver resolver_;
+    asio::io_service &service_;
+    asio::ip::tcp::socket socket_;
+    asio::ip::tcp::acceptor acceptor_;
+    asio::ip::tcp::resolver resolver_;
 };
 
 #endif // SHADOWSOCKS_ASIO_LOCALSERVER_H

@@ -1,10 +1,10 @@
 #include "Server.h"
 
-Server::Server(boost::asio::io_service &io_service, const Config &config)
+Server::Server(asio::io_service &io_service, const Config &config)
     : config_(config), service_(io_service), socket_(io_service),
       acceptor_(io_service,
-                boost::asio::ip::tcp::endpoint(
-                    boost::asio::ip::address::from_string(config.ServerAddress),
+                asio::ip::tcp::endpoint(
+                    asio::ip::address::from_string(config.ServerAddress),
                     config.ServerPort)),
       resolver_(io_service) {}
 
@@ -16,13 +16,13 @@ void Server::run() {
         ::setsockopt(fd, SOL_TCP, TCP_FASTOPEN, &qlen, sizeof(qlen));
     }
 #endif
-    acceptor_.set_option(boost::asio::ip::tcp::acceptor::reuse_address(true));
+    acceptor_.set_option(asio::ip::tcp::acceptor::reuse_address(true));
     doAccept();
 }
 
 void Server::doAccept() {
     auto self = shared_from_this();
-    acceptor_.async_accept(socket_, [this, self](boost::system::error_code ec) {
+    acceptor_.async_accept(socket_, [this, self](std::error_code ec) {
         if (ec) {
             return;
         }
@@ -40,8 +40,8 @@ void Server::doAccept() {
     });
 }
 
-ServerSession::ServerSession(boost::asio::io_service &io_service,
-                             boost::asio::ip::tcp::socket &&socket,
+ServerSession::ServerSession(asio::io_service &io_service,
+                             asio::ip::tcp::socket &&socket,
                              Config &config)
     : config_(config), service_(io_service), socket_(std::move(socket)),
       rsocket_(io_service), resolver_(io_service) {}
@@ -57,8 +57,8 @@ void ServerSession::destroyLater() {
 
 void ServerSession::async_read_some(Handler handler) {
     socket_.async_read_some(
-        boost::asio::buffer(buf, 4096),
-        [this, handler](boost::system::error_code ec, std::size_t length) {
+        asio::buffer(buf, 4096),
+        [this, handler](std::error_code ec, std::size_t length) {
             if (!ec) {
                 std::string dst = dec_->decrypt(std::string(buf, length));
                 std::copy_n(dst.cbegin(), dst.length(), std::begin(buf));
@@ -72,9 +72,9 @@ void ServerSession::async_read(std::size_t len, Handler handler) {
 }
 
 void ServerSession::async_read(char *buffer, std::size_t len, Handler handler) {
-    boost::asio::async_read(
-        socket_, boost::asio::buffer(buffer, len),
-        [this, handler, buffer](boost::system::error_code ec,
+    asio::async_read(
+        socket_, asio::buffer(buffer, len),
+        [this, handler, buffer](std::error_code ec,
                                 std::size_t length) {
             if (!ec) {
                 std::string dst = dec_->decrypt(std::string(buffer, length));
@@ -88,9 +88,9 @@ void ServerSession::async_write(char *buffer, std::size_t len,
                                 Handler handler) {
     std::string dst = enc_->encrypt(std::string(buffer, len));
     std::copy_n(dst.cbegin(), dst.length(), buffer);
-    boost::asio::async_write(
-        socket_, boost::asio::buffer(buffer, len),
-        [this, handler, buffer](boost::system::error_code ec,
+    asio::async_write(
+        socket_, asio::buffer(buffer, len),
+        [this, handler, buffer](std::error_code ec,
                                 std::size_t length) { handler(ec, length); });
 }
 
@@ -102,7 +102,7 @@ void ServerSession::doReadIV() {
     auto self = shared_from_this();
     async_read_with_timeout(
         enc_->getIvLen(), boost::posix_time::seconds(4),
-        [this, self](boost::system::error_code ec, std::size_t length) {
+        [this, self](std::error_code ec, std::size_t length) {
             if (ec) {
                 return;
             }
@@ -116,7 +116,7 @@ void ServerSession::doGetRequest() {
     auto self = shared_from_this();
     async_read_with_timeout_1(
         1, boost::posix_time::seconds(1),
-        [this, self](boost::system::error_code ec, std::size_t length) {
+        [this, self](std::error_code ec, std::size_t length) {
             if (ec) {
                 destroyLater();
                 return;
@@ -135,7 +135,7 @@ void ServerSession::doGetRequest() {
                 break;
             default:
                 approve = false;
-                BOOST_LOG_TRIVIAL(info) << "bad header from " << address;
+                info("incorrect header from %s", address.c_str());
                 break;
             }
             if (config_.AutoBan == false) {
@@ -157,7 +157,7 @@ void ServerSession::doGetRequest() {
 
 void ServerSession::doGetIPv4Request() {
     auto self = shared_from_this();
-    async_read(lenIPv4 + lenPort, [this, self](boost::system::error_code ec,
+    async_read(lenIPv4 + lenPort, [this, self](std::error_code ec,
                                                std::size_t length) {
         if (ec) {
             return;
@@ -178,7 +178,7 @@ void ServerSession::doGetIPv6Request() {
     auto self = shared_from_this();
     async_read_with_timeout_1(
         lenIPv6 + lenPort, boost::posix_time::seconds(1),
-        [this, self](boost::system::error_code ec, std::size_t length) {
+        [this, self](std::error_code ec, std::size_t length) {
             if (ec) {
                 return;
             }
@@ -199,7 +199,7 @@ void ServerSession::doGetDmRequest() {
     auto self = shared_from_this();
     async_read_with_timeout_1(
         1, boost::posix_time::seconds(1),
-        [this, self](boost::system::error_code ec, std::size_t length) {
+        [this, self](std::error_code ec, std::size_t length) {
             if (ec) {
                 return;
             }
@@ -207,7 +207,7 @@ void ServerSession::doGetDmRequest() {
             std::cout << (unsigned char)buf[0] + 2 << std::endl;
             async_read_with_timeout_1(
                 (unsigned char)buf[0] + 2, boost::posix_time::seconds(1),
-                [this, self](boost::system::error_code ec, std::size_t length) {
+                [this, self](std::error_code ec, std::size_t length) {
                     if (ec || length < 2) {
                         return;
                     }
@@ -221,18 +221,18 @@ void ServerSession::doGetDmRequest() {
 }
 
 void ServerSession::doEstablish(std::string name, std::string port) {
-    BOOST_LOG_TRIVIAL(info) << "connect " << name << ":" << port;
+    info("connect %s:%s", name.c_str(), port.c_str());
     LOG_TRACE
     auto self = shared_from_this();
-    boost::asio::ip::tcp::resolver::query query(name, port);
+    asio::ip::tcp::resolver::query query(name, port);
     resolver_.async_resolve(
-        query, [this, self](boost::system::error_code ec,
-                            boost::asio::ip::tcp::resolver::iterator iterator) {
+        query, [this, self](std::error_code ec,
+                            asio::ip::tcp::resolver::iterator iterator) {
             if (ec) {
                 return;
             }
             rsocket_.async_connect(*iterator,
-                                   [this, self](boost::system::error_code ec) {
+                                   [this, self](std::error_code ec) {
                                        LOG_TRACE
                                        if (ec) {
                                            return;
@@ -240,29 +240,6 @@ void ServerSession::doEstablish(std::string name, std::string port) {
                                        destroyLater_ = false;
                                        doPipe1();
                                        doWriteIV();
-                                       //                    auto iv =
-                                       //                    enc_->getIV();
-                                       //                    // FIXME
-                                       //                    std::copy(iv.begin(),
-                                       //                    iv.end(),
-                                       //                    std::begin(buf));
-                                       //                    boost::asio::async_write(
-                                       //                        socket_,
-                                       //                        boost::asio::buffer(buf,
-                                       //                        iv.length()),
-                                       //                        [this,
-                                       //                        self](boost::system::error_code
-                                       //                        ec,
-                                       //                                     std::size_t
-                                       //                                     length)
-                                       //                                     {
-                                       //                            LOG_TRACE
-                                       //                            if (ec) {
-                                       //                                return;
-                                       //                            }
-                                       //                            doPipe1();
-                                       //                            doPipe2();
-                                       //                        });
                                    });
         });
 }
@@ -271,8 +248,8 @@ void ServerSession::doWriteIV() {
     auto self = shared_from_this();
     auto ivlen = enc_->getIvLen();
     rsocket_.async_read_some(
-        boost::asio::buffer(rbuf, sizeof(rbuf) - ivlen),
-        [this, self](boost::system::error_code ec, std::size_t length) {
+        asio::buffer(rbuf, sizeof(rbuf) - ivlen),
+        [this, self](std::error_code ec, std::size_t length) {
             if (ec) {
                 socket_.cancel(ec);
                 return;
@@ -282,9 +259,9 @@ void ServerSession::doWriteIV() {
             std::copy_n(iv.begin(), iv.length(), std::begin(rbuf));
             std::copy_n(dst.begin(), dst.length(),
                         std::begin(rbuf) + iv.length());
-            boost::asio::async_write(
-                socket_, boost::asio::buffer(rbuf, iv.length() + dst.length()),
-                [this, self](boost::system::error_code ec, std::size_t length) {
+            asio::async_write(
+                socket_, asio::buffer(rbuf, iv.length() + dst.length()),
+                [this, self](std::error_code ec, std::size_t length) {
                     if (ec) {
                         rsocket_.cancel(ec);
                         return;
@@ -298,21 +275,18 @@ void ServerSession::doPipe1() {
     LOG_TRACE
     auto self = shared_from_this();
     async_read_some(
-        [this, self](boost::system::error_code ec, std::size_t length) {
+        [this, self](std::error_code ec, std::size_t length) {
             if (ec) {
                 LOG_TRACE
-                //                std::cout << ec << std::endl;
                 rsocket_.cancel(ec);
                 return;
             }
             LOG_TRACE
-            // std::cout << std::string(buf, length) << std::endl;
-            boost::asio::async_write(
-                rsocket_, boost::asio::buffer(buf, length),
-                [this, self](boost::system::error_code ec, std::size_t length) {
+            asio::async_write(
+                rsocket_, asio::buffer(buf, length),
+                [this, self](std::error_code ec, std::size_t length) {
                     if (ec) {
                         LOG_TRACE
-                        //                        std::cout << ec << std::endl;
                         socket_.cancel(ec);
                         return;
                     }
@@ -325,21 +299,18 @@ void ServerSession::doPipe2() {
     LOG_TRACE
     auto self = shared_from_this();
     rsocket_.async_read_some(
-        boost::asio::buffer(rbuf, 16384),
-        [this, self](boost::system::error_code ec, std::size_t length) {
+        asio::buffer(rbuf, 16384),
+        [this, self](std::error_code ec, std::size_t length) {
             if (ec) {
                 LOG_TRACE
-                //                std::cout << ec << std::endl;
                 socket_.cancel(ec);
                 return;
             }
             LOG_TRACE
-            // std::cout << std::string(rbuf, length) << std::endl;
-            async_write(length, [this, self](boost::system::error_code ec,
+            async_write(length, [this, self](std::error_code ec,
                                              std::size_t length) {
                 if (ec) {
                     LOG_TRACE
-                    //                    std::cout << ec << std::endl;
                     rsocket_.cancel(ec);
                     return;
                 }
@@ -359,16 +330,16 @@ void ServerSession::async_read_with_timeout(std::size_t length,
                                             boost::posix_time::time_duration td,
                                             Handler handler) {
     std::weak_ptr<ServerSession> wss(shared_from_this());
-    auto dt = std::make_shared<boost::asio::deadline_timer>(service_, td);
-    dt->async_wait([dt, wss, this](const boost::system::error_code &ec) {
+    auto dt = std::make_shared<asio::deadline_timer>(service_, td);
+    dt->async_wait([dt, wss, this](const std::error_code &ec) {
         if (!wss.expired()) {
-            boost::system::error_code errc = ec;
+            std::error_code errc = ec;
             socket_.cancel(errc);
         }
     });
-    boost::asio::async_read(
-        socket_, boost::asio::buffer(buf, length),
-        [handler, this, dt](boost::system::error_code ec, std::size_t length) {
+    asio::async_read(
+        socket_, asio::buffer(buf, length),
+        [handler, this, dt](std::error_code ec, std::size_t length) {
             if (!ec) {
                 dt->cancel();
             }
@@ -380,7 +351,7 @@ void ServerSession::async_read_with_timeout_1(
     std::size_t length, boost::posix_time::time_duration td, Handler handler) {
     async_read_with_timeout(
         length, td,
-        [handler, this](boost::system::error_code ec, std::size_t length) {
+        [handler, this](std::error_code ec, std::size_t length) {
             if (!ec) {
                 std::string dst = dec_->decrypt(std::string(buf, length));
                 std::copy_n(dst.cbegin(), dst.length(), std::begin(buf));

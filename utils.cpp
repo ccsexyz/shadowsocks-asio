@@ -24,17 +24,14 @@ bool checkDaemon() {
 
 void initLogging() {
     if (!LogFilePath.empty()) {
-        logging::add_file_log(LogFilePath);
+        setLogFile(LogFilePath);
     }
     if (IsVerboseMode) {
-        logging::core::get()->set_filter(logging::trivial::severity >=
-                                         logging::trivial::debug);
+        setLogLevel(VERBOSE);
     } else if (IsQuietMode) {
-        logging::core::get()->set_filter(logging::trivial::severity >=
-                                         logging::trivial::warning);
+        setLogLevel(WARN);
     } else {
-        logging::core::get()->set_filter(logging::trivial::severity >=
-                                         logging::trivial::info);
+        setLogLevel(INFO);
     }
 }
 
@@ -47,10 +44,10 @@ bool checkAddress(std::string address) {
     }
 }
 
-void runAfter(boost::asio::io_service &io_service,
+void runAfter(asio::io_service &io_service,
               boost::posix_time::time_duration td, functor f) {
-    auto dt = std::make_shared<boost::asio::deadline_timer>(io_service, td);
-    dt->async_wait([dt, f](const boost::system::error_code &) { f(); });
+    auto dt = std::make_shared<asio::deadline_timer>(io_service, td);
+    dt->async_wait([dt, f](const std::error_code &) { f(); });
 }
 
 std::size_t getRandomNumber() {
@@ -96,15 +93,15 @@ std::unique_ptr<BaseDecrypter> getDecrypter(const std::string &method,
     }
 }
 
-void plusOneSecond(boost::asio::io_service &service,
-                   boost::asio::ip::tcp::socket &&s) {
+void plusOneSecond(asio::io_service &service,
+                   asio::ip::tcp::socket &&s) {
     std::size_t n = 0;
     std::size_t x = 0;
     do {
         x = getRandomNumber() % 16 + 1;
         n += x;
     } while (x < 3 || x > 14);
-    BOOST_LOG_TRIVIAL(trace) << "续了 " << n << " 秒";
-    auto socket = std::make_shared<boost::asio::ip::tcp::socket>(std::move(s));
+    verbose("续了%lu秒", n);
+    auto socket = std::make_shared<asio::ip::tcp::socket>(std::move(s));
     runAfter(service, boost::posix_time::seconds(n), [socket] {});
 }

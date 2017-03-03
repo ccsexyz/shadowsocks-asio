@@ -34,11 +34,11 @@ void printHelpMessage() {
     std::exit(0);
 }
 
-void daemonize(boost::asio::io_service &io_service) {
-    boost::asio::signal_set signals(io_service, SIGINT, SIGTERM);
+void daemonize(asio::io_service &io_service) {
+    asio::signal_set signals(io_service, SIGINT, SIGTERM);
     signals.async_wait(
-        [&](boost::system::error_code, int) { io_service.stop(); });
-    io_service.notify_fork(boost::asio::io_service::fork_prepare);
+        [&](std::error_code, int) { io_service.stop(); });
+    io_service.notify_fork(asio::io_service::fork_prepare);
     if (pid_t pid = fork()) {
         if (pid > 0) {
             std::exit(0);
@@ -78,7 +78,7 @@ void daemonize(boost::asio::io_service &io_service) {
     if (dup(1) < 0) {
         std::exit(1);
     }
-    io_service.notify_fork(boost::asio::io_service::fork_child);
+    io_service.notify_fork(asio::io_service::fork_child);
 
     printf("Daemon started!\n");
     io_service.run();
@@ -94,7 +94,7 @@ int main(int argc, char *argv[]) {
         printVersion();
     }
     initLogging();
-    boost::asio::io_service io_service;
+    asio::io_service io_service;
     for (auto &config : configs) {
         std::make_shared<Server>(io_service, config)->run();
         std::make_shared<UdpServer>(io_service, config)->run();

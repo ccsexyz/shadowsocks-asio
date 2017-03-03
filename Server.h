@@ -6,8 +6,8 @@
 
 class ServerSession final : public std::enable_shared_from_this<ServerSession> {
 public:
-    ServerSession(boost::asio::io_service &io_service,
-                  boost::asio::ip::tcp::socket &&socket, Config &config);
+    ServerSession(asio::io_service &io_service,
+                  asio::ip::tcp::socket &&socket, Config &config);
     ~ServerSession();
     void run();
 
@@ -43,15 +43,15 @@ private:
     Config &config_;
     std::unique_ptr<BaseEncrypter> enc_;
     std::unique_ptr<BaseDecrypter> dec_;
-    boost::asio::io_service &service_;
-    boost::asio::ip::tcp::socket socket_;
-    boost::asio::ip::tcp::socket rsocket_;
-    boost::asio::ip::tcp::resolver resolver_;
+    asio::io_service &service_;
+    asio::ip::tcp::socket socket_;
+    asio::ip::tcp::socket rsocket_;
+    asio::ip::tcp::resolver resolver_;
 };
 
 class Server final : public std::enable_shared_from_this<Server> {
 public:
-    Server(boost::asio::io_service &io_service, const Config &config);
+    Server(asio::io_service &io_service, const Config &config);
     void run();
 
 private:
@@ -59,10 +59,10 @@ private:
 
 private:
     Config config_;
-    boost::asio::io_service &service_;
-    boost::asio::ip::tcp::socket socket_;
-    boost::asio::ip::tcp::acceptor acceptor_;
-    boost::asio::ip::tcp::resolver resolver_;
+    asio::io_service &service_;
+    asio::ip::tcp::socket socket_;
+    asio::ip::tcp::acceptor acceptor_;
+    asio::ip::tcp::resolver resolver_;
 };
 
 #endif // SHADOWSOCKS_ASIO_SERVER_H
