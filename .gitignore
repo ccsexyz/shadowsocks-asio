@@ -30,3 +30,14 @@
 
 .idea 
 cmake-build-debug
+.vscode
+.idea
+*.json
+.idea
+.vscode
+CMakeFiles
+CMakeCache.txt
+Makefile
+cmake_install.cmake
+sslocal 
+ssserver

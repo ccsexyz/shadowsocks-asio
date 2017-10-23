@@ -55,44 +55,6 @@ std::size_t getRandomNumber() {
     return rd();
 }
 
-std::unique_ptr<BaseEncrypter> getEncrypter(const std::string &method,
-                                            const std::string &pwd) {
-    if (method == "aes-128-cfb") {
-        return std::move(std::make_unique<Encrypter<AES, 16, 16>>(pwd));
-    } else if (method == "aes-192-cfb") {
-        return std::move(std::make_unique<Encrypter<AES, 24, 16>>(pwd));
-    } else if (method == "des-cfb") {
-        return std::move(std::make_unique<Encrypter<DES, 8, 8>>(pwd));
-    } else if (method == "bf-cfb") {
-        return std::move(std::make_unique<Encrypter<Blowfish, 16, 8>>(pwd));
-    } else if (method == "chacha20") {
-        return std::move(std::make_unique<Encrypter<ChaCha20, 32, 8>>(pwd));
-    } else if (method == "salsa20") {
-        return std::move(std::make_unique<Encrypter<Salsa20, 32, 8>>(pwd));
-    } else {
-        return std::move(std::make_unique<Encrypter<AES, 32, 16>>(pwd));
-    }
-}
-
-std::unique_ptr<BaseDecrypter> getDecrypter(const std::string &method,
-                                            const std::string &pwd) {
-    if (method == "aes-128-cfb") {
-        return std::move(std::make_unique<Decrypter<AES, 16, 16>>(pwd));
-    } else if (method == "aes-192-cfb") {
-        return std::move(std::make_unique<Decrypter<AES, 24, 16>>(pwd));
-    } else if (method == "des-cfb") {
-        return std::move(std::make_unique<Decrypter<DES, 8, 8>>(pwd));
-    } else if (method == "bf-cfb") {
-        return std::move(std::make_unique<Decrypter<Blowfish, 16, 8>>(pwd));
-    } else if (method == "chacha20") {
-        return std::move(std::make_unique<Decrypter<ChaCha20, 32, 8>>(pwd));
-    } else if (method == "salsa20") {
-        return std::move(std::make_unique<Decrypter<Salsa20, 32, 8>>(pwd));
-    } else {
-        return std::move(std::make_unique<Decrypter<AES, 32, 16>>(pwd));
-    }
-}
-
 void plusOneSecond(asio::io_service &service,
                    asio::ip::tcp::socket &&s) {
     std::size_t n = 0;

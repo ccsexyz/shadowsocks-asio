@@ -3,7 +3,7 @@
 
 #include <algorithm>
 #include <arpa/inet.h>
-#include <asio.hpp>
+#include "asio.hpp"
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
@@ -49,15 +49,6 @@ void runAfter(asio::io_service &io_service,
               boost::posix_time::time_duration td, functor f);
 
 std::size_t getRandomNumber();
-
-class BaseEncrypter;
-class BaseDecrypter;
-
-std::unique_ptr<BaseEncrypter> getEncrypter(const std::string &method,
-                                            const std::string &pwd);
-
-std::unique_ptr<BaseDecrypter> getDecrypter(const std::string &method,
-                                            const std::string &pwd);
 
 #if __cplusplus < 201402L
 // support make_unique in c++ 11
