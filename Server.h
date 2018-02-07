@@ -12,50 +12,34 @@ public:
     void run();
 
 private:
-    void async_read_some(Handler handler);
-    void async_read(std::size_t len, Handler handler);
-    void async_read(char *buffer, std::size_t len, Handler handler);
-    void async_write(std::size_t len, Handler handler);
-    void async_write(char *buffer, std::size_t len, Handler handler);
-    void async_read_with_timeout(std::size_t length,
-                                 boost::posix_time::time_duration td,
-                                 Handler handler);
-    void async_read_with_timeout_1(std::size_t length,
-                                   boost::posix_time::time_duration td,
-                                   Handler handler);
-
-private:
-    void doReadIV();
-    void doGetRequest();
-    void doGetIPv4Request();
-    void doGetIPv6Request();
-    void doGetDmRequest();
-    void doEstablish(std::string name, std::string port);
-    void doPipe1();
-    void doPipe2();
-    void doWriteIV();
     void destroyLater();
+    void decrypt(char *b, std::size_t n);
+    void encrypt(char *b, std::size_t n);
+    void do_read_request(asio::yield_context yield);
+    void do_establish(asio::yield_context yield, const std::string &name, const std::string &port);
+    void do_write_iv(asio::yield_context yield);
+    void do_pipe1(asio::yield_context yield);
+    void do_pipe2(asio::yield_context yield);
 
 private:
     bool destroyLater_ = true;
     char buf[4096];
-    char rbuf[16384];
+    char rbuf[4096];
     Config &config_;
     std::unique_ptr<BaseEncrypter> enc_;
     std::unique_ptr<BaseDecrypter> dec_;
     asio::io_service &service_;
+    asio::io_service::strand strand_;
     asio::ip::tcp::socket socket_;
     asio::ip::tcp::socket rsocket_;
     asio::ip::tcp::resolver resolver_;
+    asio::high_resolution_timer timer_;
 };
 
 class Server final : public std::enable_shared_from_this<Server> {
 public:
     Server(asio::io_service &io_service, const Config &config);
     void run();
-
-private:
-    void doAccept();
 
 private:
     Config config_;

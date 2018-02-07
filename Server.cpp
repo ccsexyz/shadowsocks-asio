@@ -9,314 +9,233 @@ Server::Server(asio::io_service &io_service, const Config &config)
       resolver_(io_service) {}
 
 void Server::run() {
-#ifdef __linux__
-    if (config_.IsFastOpen) {
-        auto fd = acceptor_.native_handle();
-        int qlen = 5;
-        ::setsockopt(fd, SOL_TCP, TCP_FASTOPEN, &qlen, sizeof(qlen));
-    }
-#endif
-    acceptor_.set_option(asio::ip::tcp::acceptor::reuse_address(true));
-    doAccept();
-}
-
-void Server::doAccept() {
     auto self = shared_from_this();
-    acceptor_.async_accept(socket_, [this, self](std::error_code ec) {
-        if (ec) {
-            return;
+    acceptor_.set_option(asio::ip::tcp::acceptor::reuse_address(true));
+    asio::spawn(service_, [this, self](asio::yield_context yield){
+        while(1) {
+            std::error_code ec;
+            acceptor_.async_accept(socket_, yield[ec]);
+            if (ec) {
+                return;
+            }
+            auto endpoint = socket_.remote_endpoint();
+            auto address = endpoint.address().to_string();
+            bool ok = checkAddress(address);
+            if (!ok) {
+                plusOneSecond(service_, std::move(socket_));
+                return;
+            }
+            std::make_shared<ServerSession>(service_, std::move(socket_), config_)->run();
         }
-        auto endpoint = socket_.remote_endpoint();
-        auto address = endpoint.address().to_string();
-        bool ok = checkAddress(address);
-        if (ok) {
-            std::make_shared<ServerSession>(service_, std::move(socket_),
-                                            config_)
-                ->run();
-        } else {
-            plusOneSecond(service_, std::move(socket_));
-        }
-        doAccept();
     });
 }
 
 ServerSession::ServerSession(asio::io_service &io_service,
                              asio::ip::tcp::socket &&socket,
                              Config &config)
-    : config_(config), service_(io_service), socket_(std::move(socket)),
-      rsocket_(io_service), resolver_(io_service) {}
+    : config_(config), service_(io_service), strand_(io_service),
+      socket_(std::move(socket)), rsocket_(io_service),
+      resolver_(io_service), timer_(io_service) {}
 
 void ServerSession::run() {
+    auto self = shared_from_this();
     enc_ = getEncrypter(config_.Method, config_.Password);
-    doReadIV();
+    asio::spawn(strand_, [this, self](asio::yield_context yield){
+        while(socket_.is_open()) {
+            std::error_code ec;
+            timer_.async_wait(yield[ec]);
+            if (timer_.expires_from_now() <= std::chrono::seconds(0)) {
+                socket_.close();
+            }
+        }
+    });
+    asio::spawn(strand_, [this, self](asio::yield_context yield){
+        do_read_request(yield);
+    });
 }
 
 void ServerSession::destroyLater() {
     plusOneSecond(service_, std::move(socket_));
 }
 
-void ServerSession::async_read_some(Handler handler) {
-    socket_.async_read_some(
-        asio::buffer(buf, 4096),
-        [this, handler](std::error_code ec, std::size_t length) {
-            if (!ec) {
-                std::string dst = dec_->decrypt(std::string(buf, length));
-                std::copy_n(dst.cbegin(), dst.length(), std::begin(buf));
-            }
-            handler(ec, length);
-        });
+void ServerSession::decrypt(char *b, std::size_t n) {
+    if (b == nullptr || n == 0) {
+        return;
+    }
+    std::string dst = dec_->decrypt(std::string(b, n));
+    std::copy_n(dst.cbegin(), dst.length(), b);
 }
 
-void ServerSession::async_read(std::size_t len, Handler handler) {
-    async_read(buf, len, handler);
+void ServerSession::encrypt(char *b, std::size_t n) {
+    if (b == nullptr || n == 0) {
+        return;
+    }
+    std::string dst = enc_->encrypt(std::string(b, n));
+    std::copy_n(dst.cbegin(), dst.length(), b);
 }
 
-void ServerSession::async_read(char *buffer, std::size_t len, Handler handler) {
-    asio::async_read(
-        socket_, asio::buffer(buffer, len),
-        [this, handler, buffer](std::error_code ec,
-                                std::size_t length) {
-            if (!ec) {
-                std::string dst = dec_->decrypt(std::string(buffer, length));
-                std::copy_n(dst.cbegin(), dst.length(), buffer);
-            }
-            handler(ec, length);
-        });
-}
-
-void ServerSession::async_write(char *buffer, std::size_t len,
-                                Handler handler) {
-    std::string dst = enc_->encrypt(std::string(buffer, len));
-    std::copy_n(dst.cbegin(), dst.length(), buffer);
-    asio::async_write(
-        socket_, asio::buffer(buffer, len),
-        [this, handler, buffer](std::error_code ec,
-                                std::size_t length) { handler(ec, length); });
-}
-
-void ServerSession::async_write(std::size_t len, Handler handler) {
-    async_write(rbuf, len, handler);
-}
-
-void ServerSession::doReadIV() {
+void ServerSession::do_read_request(asio::yield_context yield) {
     auto self = shared_from_this();
-    async_read_with_timeout(
-        enc_->getIvLen(), boost::posix_time::seconds(4),
-        [this, self](std::error_code ec, std::size_t length) {
-            if (ec) {
-                return;
-            }
-            dec_ = getDecrypter(config_.Method, config_.Password);
-            dec_->initIV(std::string(buf, enc_->getIvLen()));
-            doGetRequest();
-        });
-}
+    std::error_code ec;
+    timer_.expires_from_now(std::chrono::seconds(4));
+    std::size_t n = asio::async_read(socket_, asio::buffer(buf, enc_->getIvLen()), yield[ec]);
+    if (ec) {
+        return;
+    }
+    dec_ = getDecrypter(config_.Method, config_.Password);
+    dec_->initIV(std::string(buf, enc_->getIvLen()));
 
-void ServerSession::doGetRequest() {
-    auto self = shared_from_this();
-    async_read_with_timeout_1(
-        1, boost::posix_time::seconds(1),
-        [this, self](std::error_code ec, std::size_t length) {
-            if (ec) {
-                destroyLater();
-                return;
-            }
-            bool approve = true;
-            auto address = socket_.remote_endpoint().address().to_string();
-            switch (buf[0]) {
-            case typeIPv4:
-                doGetIPv4Request();
-                break;
-            case typeIPv6:
-                doGetIPv6Request();
-                break;
-            case typeDm:
-                doGetDmRequest();
-                break;
-            default:
-                approve = false;
-                info("incorrect header from %s", address.c_str());
-                break;
-            }
-            if (config_.AutoBan == false) {
-                return;
-            }
-            if (approve) {
-                auto it = EvilIPAddresses.find(address);
-                if (it != EvilIPAddresses.end()) {
-                    EvilIPAddresses.erase(address);
-                }
-            } else {
-                if (++EvilIPAddresses[address] > 8) {
-                    EvilIPAddresses.erase(address);
-                    ForbiddenIPAddresses.insert(address);
-                }
-            }
-        });
-}
-
-void ServerSession::doGetIPv4Request() {
-    auto self = shared_from_this();
-    async_read(lenIPv4 + lenPort, [this, self](std::error_code ec,
-                                               std::size_t length) {
+    n = asio::async_read(socket_, asio::buffer(buf, 1), yield[ec]);
+    if (ec) {
+        destroyLater();
+        return;
+    }
+    decrypt(buf, 1);
+    bool approve = true;
+    auto raddr = socket_.remote_endpoint().address().to_string();
+    auto atyp = buf[0];
+    std::string name, port;
+    char *address = buf + 128;
+    std::size_t hostlen;
+    switch (atyp) {
+    default:
+        approve = false;
+        info("incorrect header from %s", raddr.c_str());
+        break;
+    case typeIPv4:
+        n = asio::async_read(socket_, asio::buffer(buf, lenIPv4+lenPort), yield[ec]);
         if (ec) {
             return;
         }
-        char *address = buf + 128;
+        decrypt(buf, n);
         if (::inet_ntop(AF_INET, reinterpret_cast<void *>(buf), address,
                         1024) == nullptr) {
             return;
         }
-        std::string name = address;
-        std::string port =
-            std::to_string(ntohs(*reinterpret_cast<uint16_t *>(buf + 4)));
-        doEstablish(name, port);
+        name = address;
+        port = std::to_string(ntohs(*reinterpret_cast<uint16_t *>(buf + 4)));
+    case typeIPv6:
+        n = asio::async_read(socket_, asio::buffer(buf, lenIPv6+lenPort), yield[ec]);
+        if (ec) {
+            return;
+        }
+        decrypt(buf, n);
+        if (::inet_ntop(AF_INET6, reinterpret_cast<void *>(buf), address,
+                        1024) == nullptr) {
+            return;
+        }
+        name = address;
+        port = std::to_string(ntohs(*reinterpret_cast<uint16_t *>(buf + 16)));
+    case typeDm:
+        n = asio::async_read(socket_, asio::buffer(buf, 1), yield[ec]);
+        if (ec) {
+            return;
+        }
+        decrypt(buf, n);
+        hostlen = int(buf[0]);
+        n = asio::async_read(socket_, asio::buffer(buf, hostlen+2), yield[ec]);
+        if (ec) {
+            return;
+        }
+        decrypt(buf, n);
+        name = std::string(buf, n - 2);
+        port = std::to_string(ntohs(*reinterpret_cast<uint16_t *>(buf + n - 2)));
+    }
+    if (config_.AutoBan) {
+        if (approve) {
+            auto it = EvilIPAddresses.find(raddr);
+            if (it != EvilIPAddresses.end()) {
+                EvilIPAddresses.erase(raddr);
+            }
+        } else {
+            if (++EvilIPAddresses[raddr] > 8) {
+                EvilIPAddresses.erase(raddr);
+                ForbiddenIPAddresses.insert(raddr);
+            }
+        }
+    }
+
+    do_establish(yield, name, port);
+}
+
+void ServerSession::do_establish(asio::yield_context yield, const std::string &name, const std::string &port) {
+    info("connect %s:%s", name.c_str(), port.c_str());
+    auto self = shared_from_this();
+    std::error_code ec;
+    asio::ip::tcp::resolver::query query(name, port);
+    asio::ip::tcp::resolver::iterator iterator = resolver_.async_resolve(query, yield[ec]);
+    if (ec) {
+        return;
+    }
+    rsocket_.async_connect(*iterator, yield[ec]);
+    if (ec) {
+        return;
+    }
+    destroyLater_ = false;
+    asio::spawn(strand_, [this, self](asio::yield_context yield){
+        do_pipe1(yield);
+    });
+    asio::spawn(strand_, [this, self](asio::yield_context yield){
+        do_write_iv(yield);
     });
 }
 
-void ServerSession::doGetIPv6Request() {
-    auto self = shared_from_this();
-    async_read_with_timeout_1(
-        lenIPv6 + lenPort, boost::posix_time::seconds(1),
-        [this, self](std::error_code ec, std::size_t length) {
-            if (ec) {
-                return;
-            }
-            char *address = buf + 128;
-            if (::inet_ntop(AF_INET6, reinterpret_cast<void *>(buf), address,
-                            1024) == nullptr) {
-                return;
-            }
-            std::string name = address;
-            std::string port =
-                std::to_string(ntohs(*reinterpret_cast<uint16_t *>(buf + 16)));
-            doEstablish(name, port);
-        });
-}
-
-void ServerSession::doGetDmRequest() {
-    LOG_TRACE
-    auto self = shared_from_this();
-    async_read_with_timeout_1(
-        1, boost::posix_time::seconds(1),
-        [this, self](std::error_code ec, std::size_t length) {
-            if (ec) {
-                return;
-            }
-            LOG_TRACE
-            std::cout << (unsigned char)buf[0] + 2 << std::endl;
-            async_read_with_timeout_1(
-                (unsigned char)buf[0] + 2, boost::posix_time::seconds(1),
-                [this, self](std::error_code ec, std::size_t length) {
-                    if (ec || length < 2) {
-                        return;
-                    }
-                    std::string name(buf, length - 2);
-                    std::string port = std::to_string(
-                        ntohs(*reinterpret_cast<uint16_t *>(buf + length - 2)));
-                    LOG_TRACE
-                    doEstablish(name, port);
-                });
-        });
-}
-
-void ServerSession::doEstablish(std::string name, std::string port) {
-    info("connect %s:%s", name.c_str(), port.c_str());
-    LOG_TRACE
-    auto self = shared_from_this();
-    asio::ip::tcp::resolver::query query(name, port);
-    resolver_.async_resolve(
-        query, [this, self](std::error_code ec,
-                            asio::ip::tcp::resolver::iterator iterator) {
-            if (ec) {
-                return;
-            }
-            rsocket_.async_connect(*iterator,
-                                   [this, self](std::error_code ec) {
-                                       LOG_TRACE
-                                       if (ec) {
-                                           return;
-                                       }
-                                       destroyLater_ = false;
-                                       doPipe1();
-                                       doWriteIV();
-                                   });
-        });
-}
-
-void ServerSession::doWriteIV() {
+void ServerSession::do_write_iv(asio::yield_context yield) {
     auto self = shared_from_this();
     auto ivlen = enc_->getIvLen();
-    rsocket_.async_read_some(
-        asio::buffer(rbuf, sizeof(rbuf) - ivlen),
-        [this, self](std::error_code ec, std::size_t length) {
-            if (ec) {
-                socket_.cancel(ec);
-                return;
-            }
-            auto dst = enc_->encrypt(std::string(rbuf, length));
-            auto iv = enc_->getIV();
-            std::copy_n(iv.begin(), iv.length(), std::begin(rbuf));
-            std::copy_n(dst.begin(), dst.length(),
-                        std::begin(rbuf) + iv.length());
-            asio::async_write(
-                socket_, asio::buffer(rbuf, iv.length() + dst.length()),
-                [this, self](std::error_code ec, std::size_t length) {
-                    if (ec) {
-                        rsocket_.cancel(ec);
-                        return;
-                    }
-                    doPipe2();
-                });
-        });
+    std::error_code ec;
+    auto n = rsocket_.async_read_some(asio::buffer(rbuf+ivlen, sizeof(rbuf)-ivlen), yield[ec]);
+    if (ec) {
+        socket_.cancel(ec);
+        return;
+    }
+    encrypt(rbuf+ivlen, n);
+    auto iv = enc_->getIV();
+    std::copy_n(iv.begin(), iv.length(), std::begin(rbuf));
+    asio::async_write(socket_, asio::buffer(rbuf, ivlen+n), yield[ec]);
+    if (ec) {
+        socket_.cancel(ec);
+        return;
+    }
+    do_pipe2(yield);
 }
 
-void ServerSession::doPipe1() {
-    LOG_TRACE
+void ServerSession::do_pipe1(asio::yield_context yield) {
     auto self = shared_from_this();
-    async_read_some(
-        [this, self](std::error_code ec, std::size_t length) {
-            if (ec) {
-                LOG_TRACE
-                rsocket_.cancel(ec);
-                return;
-            }
-            LOG_TRACE
-            asio::async_write(
-                rsocket_, asio::buffer(buf, length),
-                [this, self](std::error_code ec, std::size_t length) {
-                    if (ec) {
-                        LOG_TRACE
-                        socket_.cancel(ec);
-                        return;
-                    }
-                    doPipe1();
-                });
-        });
+    std::error_code ec;
+    while (1) {
+        timer_.expires_from_now(std::chrono::seconds(4));
+        std::size_t n = socket_.async_read_some(asio::buffer(buf, sizeof(buf)), yield[ec]);
+        if (ec) {
+            rsocket_.cancel(ec);
+            return;
+        }
+        decrypt(buf, n);
+        asio::async_write(rsocket_, asio::buffer(buf, n), yield[ec]);
+        if (ec) {
+            socket_.cancel(ec);
+            return;
+        }
+    }
 }
 
-void ServerSession::doPipe2() {
-    LOG_TRACE
+void ServerSession::do_pipe2(asio::yield_context yield) {
     auto self = shared_from_this();
-    rsocket_.async_read_some(
-        asio::buffer(rbuf, 16384),
-        [this, self](std::error_code ec, std::size_t length) {
-            if (ec) {
-                LOG_TRACE
-                socket_.cancel(ec);
-                return;
-            }
-            LOG_TRACE
-            async_write(length, [this, self](std::error_code ec,
-                                             std::size_t length) {
-                if (ec) {
-                    LOG_TRACE
-                    rsocket_.cancel(ec);
-                    return;
-                }
-                doPipe2();
-            });
-        });
+    std::error_code ec;
+    while (1) {
+        timer_.expires_from_now(std::chrono::seconds(4));
+        std::size_t n = rsocket_.async_read_some(asio::buffer(rbuf, sizeof(rbuf)), yield[ec]);
+        if (ec) {
+            socket_.cancel(ec);
+            return;
+        }
+        encrypt(rbuf, n);
+        asio::async_write(socket_, asio::buffer(rbuf, n), yield[ec]);
+        if (ec) {
+            rsocket_.cancel(ec);
+            return;
+        }
+    }
 }
 
 ServerSession::~ServerSession() {
@@ -324,38 +243,4 @@ ServerSession::~ServerSession() {
     if (destroyLater_) {
         plusOneSecond(service_, std::move(socket_));
     }
-}
-
-void ServerSession::async_read_with_timeout(std::size_t length,
-                                            boost::posix_time::time_duration td,
-                                            Handler handler) {
-    std::weak_ptr<ServerSession> wss(shared_from_this());
-    auto dt = std::make_shared<asio::deadline_timer>(service_, td);
-    dt->async_wait([dt, wss, this](const std::error_code &ec) {
-        if (!wss.expired()) {
-            std::error_code errc = ec;
-            socket_.cancel(errc);
-        }
-    });
-    asio::async_read(
-        socket_, asio::buffer(buf, length),
-        [handler, this, dt](std::error_code ec, std::size_t length) {
-            if (!ec) {
-                dt->cancel();
-            }
-            handler(ec, length);
-        });
-}
-
-void ServerSession::async_read_with_timeout_1(
-    std::size_t length, boost::posix_time::time_duration td, Handler handler) {
-    async_read_with_timeout(
-        length, td,
-        [handler, this](std::error_code ec, std::size_t length) {
-            if (!ec) {
-                std::string dst = dec_->decrypt(std::string(buf, length));
-                std::copy_n(dst.cbegin(), dst.length(), std::begin(buf));
-            }
-            handler(ec, length);
-        });
 }

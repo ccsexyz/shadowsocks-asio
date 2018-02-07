@@ -4,6 +4,8 @@
 #include <algorithm>
 #include <arpa/inet.h>
 #include "asio.hpp"
+#include "asio/spawn.hpp"
+#include "asio/high_resolution_timer.hpp"
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
