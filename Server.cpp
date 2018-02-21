@@ -27,7 +27,7 @@ void Server::run() {
             }
             std::make_shared<ServerSession>(service_, std::move(socket_), config_)->run();
         }
-    });
+    }, default_coroutines_attr);
 }
 
 ServerSession::ServerSession(asio::io_service &io_service,
@@ -48,10 +48,10 @@ void ServerSession::run() {
                 socket_.close();
             }
         }
-    });
+    }, default_coroutines_attr);
     asio::spawn(strand_, [this, self](asio::yield_context yield){
         do_read_request(yield);
-    });
+    }, default_coroutines_attr);
 }
 
 void ServerSession::destroyLater() {
@@ -100,7 +100,7 @@ void ServerSession::do_read_request(asio::yield_context yield) {
     switch (atyp) {
     default:
         approve = false;
-        info("incorrect header from %s", raddr.c_str());
+        LOG(INFO) << "incorrect header from " << raddr;
         break;
     case typeIPv4:
         n = asio::async_read(socket_, asio::buffer(buf, lenIPv4+lenPort), yield[ec]);
@@ -114,6 +114,7 @@ void ServerSession::do_read_request(asio::yield_context yield) {
         }
         name = address;
         port = std::to_string(ntohs(*reinterpret_cast<uint16_t *>(buf + 4)));
+        break;
     case typeIPv6:
         n = asio::async_read(socket_, asio::buffer(buf, lenIPv6+lenPort), yield[ec]);
         if (ec) {
@@ -126,6 +127,7 @@ void ServerSession::do_read_request(asio::yield_context yield) {
         }
         name = address;
         port = std::to_string(ntohs(*reinterpret_cast<uint16_t *>(buf + 16)));
+        break;
     case typeDm:
         n = asio::async_read(socket_, asio::buffer(buf, 1), yield[ec]);
         if (ec) {
@@ -140,6 +142,7 @@ void ServerSession::do_read_request(asio::yield_context yield) {
         decrypt(buf, n);
         name = std::string(buf, n - 2);
         port = std::to_string(ntohs(*reinterpret_cast<uint16_t *>(buf + n - 2)));
+        break;
     }
     if (config_.AutoBan) {
         if (approve) {
@@ -159,7 +162,7 @@ void ServerSession::do_read_request(asio::yield_context yield) {
 }
 
 void ServerSession::do_establish(asio::yield_context yield, const std::string &name, const std::string &port) {
-    info("connect %s:%s", name.c_str(), port.c_str());
+    LOG(INFO) << "connect " << name << ":" << port;
     auto self = shared_from_this();
     std::error_code ec;
     asio::ip::tcp::resolver::query query(name, port);
@@ -174,10 +177,10 @@ void ServerSession::do_establish(asio::yield_context yield, const std::string &n
     destroyLater_ = false;
     asio::spawn(strand_, [this, self](asio::yield_context yield){
         do_pipe1(yield);
-    });
+    }, default_coroutines_attr);
     asio::spawn(strand_, [this, self](asio::yield_context yield){
         do_write_iv(yield);
-    });
+    }, default_coroutines_attr);
 }
 
 void ServerSession::do_write_iv(asio::yield_context yield) {

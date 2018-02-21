@@ -93,12 +93,13 @@ int main(int argc, char *argv[]) {
     if (ShowVersion) {
         printVersion();
     }
-    initLogging();
     asio::io_service io_service;
     for (auto &config : configs) {
         std::make_shared<Server>(io_service, config)->run();
         std::make_shared<UdpServer>(io_service, config)->run();
     }
+    auto attributes = boost::coroutines::attributes();
+    LOG(INFO) << "boost coroutine stack size " << attributes.size;
     if (checkDaemon()) {
         daemonize(io_service);
     } else {

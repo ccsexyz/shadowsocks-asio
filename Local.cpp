@@ -19,7 +19,7 @@ void Local::run() {
             }
             std::make_shared<LocalSession>(service_, std::move(socket_), config_)->run();
         }
-    });
+    }, default_coroutines_attr);
 }
 
 LocalSession::LocalSession(asio::io_service &io_service, asio::ip::tcp::socket &&socket, Config &config)
@@ -92,9 +92,9 @@ void LocalSession::run() {
             port = std::to_string(ntohs(*reinterpret_cast<uint16_t *>(buf + 5 + len)));
             header = std::string(buf + 3, len + 4);
         }
-        info("connect %s:%s", address.c_str(), port.c_str());
+        LOG(INFO) << "connect " << address << ":" << port << "\n";
         do_establish(yield, header);
-    });
+    }, default_coroutines_attr);
 }
 
 void LocalSession::do_establish(asio::yield_context yield, const std::string &header) {
@@ -127,16 +127,23 @@ void LocalSession::do_establish(asio::yield_context yield, const std::string &he
     if (ec) {
         return;
     }
+    std::size_t n = socket_.async_read_some(asio::buffer(buf+ivlen, sizeof(buf)-ivlen), yield[ec]);
+    if (ec) {
+        return;
+    }
+    auto encBody = enc_->encrypt(std::string(buf+ivlen, n));
+    std::copy_n(encBody.begin(), n, std::begin(buf) + ivlen);
+    ivlen += encBody.length();
     asio::async_write(rsocket_, asio::buffer(buf, ivlen), yield[ec]);
     if (ec) {
         return;
     }
     asio::spawn(strand_, [this, self](asio::yield_context yield){
         do_read_iv(yield);
-    });
+    }, default_coroutines_attr);
     asio::spawn(strand_, [this, self](asio::yield_context yield){
         do_pipe2(yield);
-    });
+    }, default_coroutines_attr);
 }
 
 void LocalSession::do_read_iv(asio::yield_context yield) {
@@ -175,7 +182,7 @@ void LocalSession::do_pipe2(asio::yield_context yield) {
     auto self = shared_from_this();
     while(1) {
         std::error_code ec;
-        std::size_t n = socket_.async_read_some(asio::buffer(buf, 4096), yield[ec]);
+        std::size_t n = socket_.async_read_some(asio::buffer(buf, sizeof(buf)), yield[ec]);
         if (ec) {
             rsocket_.cancel(ec);
             return;

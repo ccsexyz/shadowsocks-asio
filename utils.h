@@ -22,9 +22,9 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
+#include <deque>
 #include <vector>
-
-#include "Logger.h"
+#include "glog/logging.h"
 
 using functor = std::function<void()>;
 
@@ -43,14 +43,23 @@ void printVersion();
 
 bool checkDaemon();
 
-void initLogging();
-
 bool checkAddress(std::string address);
 
 void runAfter(asio::io_service &io_service,
               boost::posix_time::time_duration td, functor f);
 
 std::size_t getRandomNumber();
+
+class clean_ {
+public:
+    clean_(const clean_ &) = delete;
+
+    clean_(clean_ &&) = delete;
+
+    clean_ &operator=(const clean_ &) = delete;
+
+    clean_() = default;
+};
 
 #if __cplusplus < 201402L
 // support make_unique in c++ 11
@@ -80,5 +89,47 @@ void plusOneSecond(asio::io_service &service,
                    asio::ip::tcp::socket &&s);
 
 using Handler = std::function<void(std::error_code, std::size_t)>;
+
+class AsioCondVar : clean_ {
+public:
+    AsioCondVar() = default;
+
+    void notify_n(std::size_t n);
+    void notify_one();
+    void notify_all();
+    void wait(asio::io_service &io_service, asio::yield_context yield);
+private:
+    std::list<std::weak_ptr<asio::high_resolution_timer>> timers_;
+};
+
+template <typename T, std::size_t N>
+class AsioChan {
+public:
+    AsioChan() {
+        elements_.reserve(N);
+    }
+    bool send(T ele, asio::io_service &io_service, asio::yield_context yield) {
+        while (elements_.size() >= N) {
+            not_full_.wait(io_service, yield);
+        }
+        elements_.push_back(ele);
+        not_empty_.notify_one();
+    }
+    bool recv(asio::io_service &io_service, asio::yield_context yield, T &ele) {
+        while (elements_.size() == 0) {
+            not_empty_.wait(io_service, yield);
+        }
+        T ele_copy = elements_.front();
+        elements_.pop_front();
+        not_full_.notify_one();
+        ele = ele_copy;
+    }
+private:
+    std::deque<T> elements_;
+    AsioCondVar not_full_;
+    AsioCondVar not_empty_;
+};
+
+extern boost::coroutines::attributes default_coroutines_attr;
 
 #endif // SHADOWSOCKS_ASIO_UTILS_H

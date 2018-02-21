@@ -1,189 +1,260 @@
 #include "UdpServer.h"
 
+UdpSession::UdpSession(asio::io_service &io_service, std::shared_ptr<UdpServer> server,
+    asio::ip::udp::endpoint from_endpoint, const Config &config)
+    : config_(config), service_(io_service), strand_(io_service),
+    from_endpoint_(from_endpoint), server_(server),
+    timeout_timer_(io_service), usocket_(io_service), resolver_(io_service) {}
+
+UdpSession::~UdpSession() {
+    auto server = server_.lock();
+    if (server) {
+        server->remove_session(from_endpoint_);
+    }
+}
+
+void UdpSession::run() {
+    auto self = shared_from_this();
+    asio::spawn(strand_, [this, self](asio::yield_context yield){
+        wait_and_process_first_packet(yield);
+    }, default_coroutines_attr);
+    timeout_timer_.expires_from_now(std::chrono::seconds(4));
+    asio::spawn(strand_, [this, self](asio::yield_context yield){
+        timeout(yield);
+    }, default_coroutines_attr);
+}
+
+void UdpSession::destroy() {
+    destroyed_ = true;
+    bufch_.notify_all();
+    usocket_.close();
+}
+
+void UdpSession::timeout(asio::yield_context yield) {
+    while (!destroyed_) {
+        std::error_code ec;
+        timeout_timer_.async_wait(yield[ec]);
+        if (timeout_timer_.expires_from_now() <= std::chrono::seconds(0)) {
+            destroy();
+        }
+    }
+}
+
+std::string UdpSession::recv_packet(asio::yield_context yield) {
+    while (buffers_.empty()) {
+        bufch_.wait(service_, yield);
+        if (destroyed_) {
+            return "";
+        }
+    }
+    auto buffer = buffers_[0];
+    buffers_.pop_front();
+    return buffer;
+}
+
+void UdpSession::wait_and_process_first_packet(asio::yield_context yield) {
+    std::error_code ec;
+    auto self = shared_from_this();
+    std::string buffer = recv_packet(yield);
+    if (destroyed_) {
+        return;
+    }
+    auto dec = getDecrypter(config_.Method, config_.Password);
+    auto ivlen = dec->getIvLen();
+    auto n = buffer.size();
+    if (n < ivlen) {
+        return;
+    }
+    dec->initIV(buffer.substr(0, ivlen));
+    std::string plain = dec->decrypt(buffer.substr(ivlen, n));
+    char *data = const_cast<char *>(plain.data());
+    n = plain.size();
+    if (n <= 2) {
+        return;
+    }
+    auto atyp = data[0];
+    if (atyp == typeIPv4) {
+        if (n < lenIPv4 + 2 + 1) {
+            return;
+        }
+        endpoint_ = asio::ip::udp::endpoint(
+            asio::ip::address_v4(ntohl(*reinterpret_cast<long *>(data + 1))),
+            ntohs(*reinterpret_cast<uint16_t *>(data + lenIPv4 + 1)));
+        hdrsz_ = lenIPv4 + 2 + 1;
+    } else if (atyp == typeIPv6) {
+        if (n < lenIPv6 + 2 + 1) {
+            return;
+        }
+        asio::ip::address_v6::bytes_type bytes;
+        std::copy_n(data + 1, bytes.size(), bytes.data());
+        endpoint_ = asio::ip::udp::endpoint(
+            asio::ip::address_v6(bytes),
+            ntohs(*reinterpret_cast<uint16_t *>(data + 1 + lenIPv6)));
+        hdrsz_ = lenIPv6 + 2 + 1;
+    } else if (atyp == typeDm) {
+        unsigned char len = data[1];
+        if (n < len + 2 + 2) {
+            return;
+        }
+        std::string name(data + 2, len);
+        uint16_t port = ntohs(*reinterpret_cast<uint16_t *>(data + len + 2));
+        asio::ip::udp::resolver::query query(name, std::to_string(port));
+        auto iterator = resolver_.async_resolve(query, yield[ec]);
+        if (ec) {
+            return;
+        }
+        endpoint_ = *iterator;
+        hdrsz_ = len + 2 + 2;
+    } else {
+        return;
+    }
+    header_ = std::string(data, hdrsz_);
+    LOG(INFO) << "[udp] " << endpoint_.address().to_string() << ":" << static_cast<int>(endpoint_.port());
+    usocket_.async_connect(endpoint_, yield[ec]);
+    if (ec) {
+        return;
+    }
+    usocket_.async_send(asio::buffer(data+hdrsz_, n-hdrsz_), yield[ec]);
+    if (ec) {
+        return;
+    }
+    ivlen_ = ivlen;
+    asio::spawn(strand_, [this, self](asio::yield_context yield){
+        do_pipe1(yield);
+    }, default_coroutines_attr);
+    asio::spawn(strand_, [this, self](asio::yield_context yield){
+        do_pipe2(yield);
+    }, default_coroutines_attr);
+}
+
+void UdpSession::do_pipe1(asio::yield_context yield) {
+    auto self = shared_from_this();
+    std::error_code ec;
+
+    for (;;) {
+        timeout_timer_.expires_from_now(std::chrono::seconds(4));
+        auto buffer = recv_packet(yield);
+        if (destroyed_) {
+            return;
+        }
+        auto n = buffer.size();
+        auto dec = getDecrypter(config_.Method, config_.Password);
+        if (n < ivlen_ + hdrsz_) {
+            continue;
+        }
+        dec->initIV(buffer.substr(0, ivlen_));
+        std::string plain = dec->decrypt(buffer.substr(ivlen_, n));
+        const char *data = plain.data() + hdrsz_;
+        usocket_.async_send(asio::buffer(data, n - ivlen_ - hdrsz_), yield[ec]);
+        if (ec) {
+            return;
+        }
+    }
+}
+
+void UdpSession::do_pipe2(asio::yield_context yield) {
+    auto self = shared_from_this();
+    std::error_code ec;
+    char buf[2048];
+    char *iv = buf;
+    char *hdr = buf + ivlen_;
+    char *data = buf + ivlen_ + hdrsz_;
+
+    for (;;) {
+        timeout_timer_.expires_from_now(std::chrono::seconds(4));
+        auto n = usocket_.async_receive(asio::buffer(data, sizeof(buf) - ivlen_ - hdrsz_), yield[ec]);
+        if (ec) {
+            return;
+        }
+        auto server = server_.lock();
+        if (!server) {
+            return;
+        }
+        auto enc = getEncrypter(config_.Method, config_.Password);
+        auto eiv = enc->getIV();
+        std::copy_n(eiv.begin(), ivlen_, iv);
+        std::copy_n(header_.begin(), hdrsz_, hdr);
+        auto edata = enc->encrypt(std::string(hdr, hdrsz_+n));
+        std::copy_n(edata.begin(), hdrsz_+n, hdr);
+        server->send(from_endpoint_, buf, ivlen_+hdrsz_+n, yield);
+    }
+}
+
+void UdpSession::send(const char *buf, std::size_t length) {
+    if (destroyed_) {
+        return;
+    }
+    buffers_.emplace_back(buf, length);
+    bufch_.notify_one();
+}
+
 UdpServer::UdpServer(asio::io_service &io_service, const Config &config)
     : config_(config), service_(io_service),
       usocket_(io_service,
                asio::ip::udp::endpoint(
                    asio::ip::address::from_string(config.ServerAddress),
-                   config.ServerPort)),
-      resolver_(io_service) {}
+                   config.ServerPort)) {}
 
-void UdpServer::run() { doReceive(); }
-
-void UdpServer::doReceive() {
+void UdpServer::run() {
     auto self = shared_from_this();
-    usocket_.async_receive_from(
-        asio::buffer(buf, sizeof(buf)), endpoint_,
-        [this, self](std::error_code ec, std::size_t length) {
-            handleReceive(ec, length);
-        });
+    asio::spawn(service_, [this, self](asio::yield_context yield){
+        recv_loop(yield);
+    }, default_coroutines_attr);
 }
 
-void UdpServer::handleReceive(std::error_code ec,
-                              std::size_t length) {
+void UdpServer::recv_loop(asio::yield_context yield) {
+    auto self = shared_from_this();
+    asio::ip::udp::endpoint last_endpoint;
+    std::weak_ptr<UdpSession> last_session;
+
+    for (;;) {
+        std::error_code ec;
+        auto n = usocket_.async_receive_from(asio::buffer(buf, sizeof(buf)), endpoint_, yield[ec]);
+        if (ec) {
+            usocket_.cancel();
+            return;
+        }
+        std::shared_ptr<UdpSession> udp_sess;
+        auto it = sessions_.find(endpoint_);
+        if (it != sessions_.end()) {
+            auto &weak_sess = it->second;
+            udp_sess = weak_sess.lock();
+        }
+        if (!udp_sess) {
+            udp_sess = std::make_shared<UdpSession>(service_, self,
+                endpoint_, config_);
+            sessions_.emplace(endpoint_, udp_sess);
+            udp_sess->run();
+        }
+        last_endpoint = endpoint_;
+        last_session = udp_sess;
+        udp_sess->send(buf, n);
+    }
+}
+
+UdpServer::~UdpServer() {
+    destroy();
+}
+
+void UdpServer::destroy() {
+    for (auto &weak_sess : sessions_) {
+        auto sess = weak_sess.second.lock();
+        if (!sess) {
+            continue;
+        }
+        sess->destroy();
+    }
+    sessions_.clear();
+}
+
+void UdpServer::remove_session(asio::ip::udp::endpoint endpoint) {
+    sessions_.erase(endpoint);
+}
+
+void UdpServer::send(const asio::ip::udp::endpoint &ep, const char *buf, std::size_t n, asio::yield_context yield) {
+    std::error_code ec;
+    usocket_.async_send_to(asio::buffer(buf, n), ep, yield[ec]);
     if (ec) {
-        usocket_.cancel();
-        return;
+        destroy();
     }
-    auto dec = getDecrypter(config_.Method, config_.Password);
-    auto ivlen = dec->getIvLen();
-    char *data = buf;
-    if (length <= ivlen) {
-        doReceive();
-        return;
-    }
-    dec->initIV(std::string(data, ivlen));
-    data += ivlen;
-    length -= ivlen;
-    std::string plain = dec->decrypt(std::string(data, length));
-    std::copy_n(plain.begin(), plain.length(), std::begin(buf));
-    data = buf;
-    if (length <= 2) {
-        doReceive();
-        return;
-    }
-    auto atyp = data[0];
-    data++;
-    length--;
-    auto self = shared_from_this();
-    if (atyp == typeIPv4) {
-        if (length <= lenIPv4 + 2) {
-            doReceive();
-            return;
-        }
-        auto ep = asio::ip::udp::endpoint(
-            asio::ip::address_v4(ntohl(*reinterpret_cast<long *>(data))),
-            ntohs(*reinterpret_cast<uint16_t *>(data + lenIPv4)));
-        data += lenIPv4 + lenPort;
-        length -= lenIPv4 + lenPort;
-        //        if(ep.address().to_string() == "8.8.8.8") {
-        //            ep =
-        //            asio::ip::udp::endpoint(asio::ip::address_v4::from_string("223.6.6.6"),
-        //            ep.port());
-        //        }
-        sendDataFromLocal(ep, std::string(data - lenIPv4 - lenPort - 1,
-                                          lenIPv4 + lenPort + 1),
-                          data, length);
-    } else if (atyp == typeIPv6) {
-        if (length <= lenIPv6) {
-            doReceive();
-            return;
-        }
-        asio::ip::address_v6::bytes_type bytes;
-        std::copy_n(data, bytes.size(), bytes.data());
-        auto ep = asio::ip::udp::endpoint(
-            asio::ip::address_v6(bytes),
-            ntohs(*reinterpret_cast<uint16_t *>(data + lenIPv6)));
-        data += lenIPv6 + lenPort;
-        length -= lenIPv6 + lenPort;
-        sendDataFromLocal(ep, std::string(data - lenIPv6 - lenPort - 1,
-                                          lenIPv6 + lenPort + 1),
-                          data, length);
-    } else if (atyp == typeDm) {
-        unsigned char len = data[0];
-        data++;
-        length--;
-        if (length <= len + 2) {
-            doReceive();
-            return;
-        }
-        std::string name(data, len);
-        data += len;
-        length -= len;
-        uint16_t port = ntohs(*reinterpret_cast<uint16_t *>(data));
-        asio::ip::udp::resolver::query query(name, std::to_string(port));
-        data += 2;
-        length -= 2;
-        std::string header(data - len - 3, len + 3);
-        auto self = shared_from_this();
-        resolver_.async_resolve(
-            query, [this, self, data, length,
-                    header](std::error_code ec,
-                            asio::ip::udp::resolver::iterator iterator) {
-                if (ec) {
-                    doReceive();
-                    return;
-                }
-                auto ep = *iterator;
-                sendDataFromLocal(ep, header, data, length);
-            });
-    } else {
-        doReceive();
-        return;
-    }
-}
-
-void UdpServer::sendDataFromLocal(asio::ip::udp::endpoint ep,
-                                  std::string header, char *data,
-                                  std::size_t len) {
-    auto self = shared_from_this();
-    info("[udp] %s:%d", ep.address().to_string().c_str(), static_cast<int>(ep.port()));
-    auto it = sessions_.find(endpoint_);
-    if (it == sessions_.end()) {
-        sessions_.emplace(endpoint_,
-                          UdpSession(asio::ip::udp::socket(
-                              service_, asio::ip::udp::v4())));
-        recvDataFromRemote(endpoint_);
-        it = sessions_.find(endpoint_);
-    }
-    headers_.emplace(ep, std::move(header));
-    auto &session = it->second;
-    auto &usocket = session.usocket_;
-    usocket.async_send_to(
-        asio::buffer(data, len), ep,
-        [this, self](std::error_code ec, std::size_t length) {
-            doReceive();
-            return;
-        });
-}
-
-void UdpServer::doRecvDataFromRemote(asio::ip::udp::endpoint ep,
-                                     std::error_code ec,
-                                     std::size_t length) {
-    if (ec) {
-        sessions_.erase(ep);
-        return;
-    }
-    auto self = shared_from_this();
-    auto enc = getEncrypter(config_.Method, config_.Password);
-    auto iv = enc->getIV();
-    auto ivlen = enc->getIvLen();
-    auto it = sessions_.find(ep);
-    auto &session = it->second;
-    char *rbuf = session.rbuf;
-    auto dstHeader = enc->encrypt(headers_[session.endpoint_]);
-    auto dstBody = enc->encrypt(std::string(rbuf, length));
-    std::copy_n(iv.begin(), ivlen, rbuf);
-    std::copy_n(dstHeader.begin(), dstHeader.length(), rbuf + ivlen);
-    std::copy_n(dstBody.begin(), dstBody.length(),
-                rbuf + ivlen + dstHeader.length());
-    ivlen += dstHeader.length() + dstBody.length();
-
-    usocket_.async_send_to(
-        asio::buffer(rbuf, ivlen), ep,
-        [this, self, ep](std::error_code ec, std::size_t length) {
-            if (ec) {
-                sessions_.erase(ep);
-                return;
-            }
-            recvDataFromRemote(ep);
-        });
-}
-
-void UdpServer::recvDataFromRemote(asio::ip::udp::endpoint ep) {
-    auto self = shared_from_this();
-    auto dt = std::make_shared<asio::deadline_timer>(
-        service_, boost::posix_time::seconds(16));
-    auto it = sessions_.find(ep);
-    auto &session = it->second;
-    session.usocket_.async_receive_from(
-        asio::buffer(session.rbuf, sizeof(session.rbuf)),
-        session.endpoint_,
-        [this, self, ep, dt](std::error_code ec, std::size_t length) {
-            dt->cancel();
-            doRecvDataFromRemote(ep, ec, length);
-        });
-    dt->async_wait([dt, &session](const std::error_code &) {
-        session.usocket_.cancel();
-    });
 }
