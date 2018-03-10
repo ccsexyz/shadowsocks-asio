@@ -14,3 +14,5 @@ cd ..
 
 make clean  
 rm CMakeCache.txt  
+rm *.cmake
+rm -rf CMakeFiles

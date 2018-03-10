@@ -9,14 +9,16 @@ class BaseEncrypter {
 public:
     virtual std::size_t getIvLen() = 0;
     virtual std::string getIV() = 0;
-    virtual std::string encrypt(const std::string &) = 0;
+    virtual void encrypt(const char *in, std::size_t in_sz, 
+                            char *out, std::size_t out_sz) = 0;
 };
 
 class BaseDecrypter {
 public:
     virtual std::size_t getIvLen() = 0;
     virtual void initIV(const std::string &) = 0;
-    virtual std::string decrypt(const std::string &) = 0;
+    virtual void decrypt(const char *in, std::size_t in_sz, 
+                            char *out, std::size_t out_sz) = 0;
 };
 
 std::unique_ptr<BaseEncrypter> getEncrypter(const std::string &method,

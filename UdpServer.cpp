@@ -35,8 +35,7 @@ void UdpServer::handleReceive(std::error_code ec,
     dec->initIV(std::string(data, ivlen));
     data += ivlen;
     length -= ivlen;
-    std::string plain = dec->decrypt(std::string(data, length));
-    std::copy_n(plain.begin(), plain.length(), std::begin(buf));
+    dec->decrypt(data, length, buf, length);
     data = buf;
     if (length <= 2) {
         doReceive();
@@ -151,12 +150,11 @@ void UdpServer::doRecvDataFromRemote(asio::ip::udp::endpoint ep,
     auto it = sessions_.find(ep);
     auto &session = it->second;
     char *rbuf = session.rbuf;
-    auto dstHeader = enc->encrypt(headers_[session.endpoint_]);
-    auto dstBody = enc->encrypt(std::string(rbuf, length));
+    auto dstHeader = headers_[session.endpoint_];
+    auto dstBody = std::string(rbuf, length);
     std::copy_n(iv.begin(), ivlen, rbuf);
-    std::copy_n(dstHeader.begin(), dstHeader.length(), rbuf + ivlen);
-    std::copy_n(dstBody.begin(), dstBody.length(),
-                rbuf + ivlen + dstHeader.length());
+    enc->encrypt(dstHeader.data(), dstHeader.size(), rbuf+ivlen, dstHeader.size());
+    enc->encrypt(dstBody.data(), dstBody.size(), rbuf+ivlen+dstHeader.size(), dstBody.size());
     ivlen += dstHeader.length() + dstBody.length();
 
     usocket_.async_send_to(

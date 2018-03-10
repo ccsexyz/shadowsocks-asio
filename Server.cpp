@@ -60,8 +60,7 @@ void ServerSession::async_read_some(Handler handler) {
         asio::buffer(buf, 4096),
         [this, handler](std::error_code ec, std::size_t length) {
             if (!ec) {
-                std::string dst = dec_->decrypt(std::string(buf, length));
-                std::copy_n(dst.cbegin(), dst.length(), std::begin(buf));
+                dec_->decrypt(buf, length, buf, length);
             }
             handler(ec, length);
         });
@@ -77,8 +76,7 @@ void ServerSession::async_read(char *buffer, std::size_t len, Handler handler) {
         [this, handler, buffer](std::error_code ec,
                                 std::size_t length) {
             if (!ec) {
-                std::string dst = dec_->decrypt(std::string(buffer, length));
-                std::copy_n(dst.cbegin(), dst.length(), buffer);
+                dec_->decrypt(buffer, length, buffer, length);
             }
             handler(ec, length);
         });
@@ -86,8 +84,7 @@ void ServerSession::async_read(char *buffer, std::size_t len, Handler handler) {
 
 void ServerSession::async_write(char *buffer, std::size_t len,
                                 Handler handler) {
-    std::string dst = enc_->encrypt(std::string(buffer, len));
-    std::copy_n(dst.cbegin(), dst.length(), buffer);
+    enc_->encrypt(buffer, len, buffer, len);
     asio::async_write(
         socket_, asio::buffer(buffer, len),
         [this, handler, buffer](std::error_code ec,
@@ -254,13 +251,12 @@ void ServerSession::doWriteIV() {
                 socket_.cancel(ec);
                 return;
             }
-            auto dst = enc_->encrypt(std::string(rbuf, length));
+            auto src = std::string(rbuf, length);
             auto iv = enc_->getIV();
             std::copy_n(iv.begin(), iv.length(), std::begin(rbuf));
-            std::copy_n(dst.begin(), dst.length(),
-                        std::begin(rbuf) + iv.length());
+            enc_->encrypt(src.data(), length, rbuf+iv.length(), length);
             asio::async_write(
-                socket_, asio::buffer(rbuf, iv.length() + dst.length()),
+                socket_, asio::buffer(rbuf, iv.length() + length),
                 [this, self](std::error_code ec, std::size_t length) {
                     if (ec) {
                         rsocket_.cancel(ec);
@@ -353,8 +349,7 @@ void ServerSession::async_read_with_timeout_1(
         length, td,
         [handler, this](std::error_code ec, std::size_t length) {
             if (!ec) {
-                std::string dst = dec_->decrypt(std::string(buf, length));
-                std::copy_n(dst.cbegin(), dst.length(), std::begin(buf));
+                dec_->decrypt(buf, length, buf, length);
             }
             handler(ec, length);
         });

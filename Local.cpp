@@ -164,10 +164,10 @@ void LocalSession::doEstablish(const std::string &header) {
     enc_ = getEncrypter(config_.Method, config_.Password);
     auto iv = enc_->getIV();
     auto ivlen = enc_->getIvLen();
-    auto encHeader = enc_->encrypt(header);
     std::copy_n(iv.begin(), ivlen, std::begin(buf));
-    std::copy_n(encHeader.begin(), encHeader.length(), std::begin(buf) + ivlen);
-    ivlen += encHeader.length();
+    auto hdrsz = header.size();
+    enc_->encrypt(header.data(), hdrsz, buf+ivlen, hdrsz);
+    ivlen += hdrsz;
     auto self = shared_from_this();
     asio::ip::tcp::resolver::query query(config_.ServerAddress, std::to_string(config_.ServerPort));
     resolver_.async_resolve(query,
@@ -212,8 +212,7 @@ void LocalSession::async_read_some(Handler handler) {
             asio::buffer(rbuf, 4096),
             [this, handler](std::error_code ec, std::size_t length) {
                 if (!ec) {
-                    std::string dst = dec_->decrypt(std::string(rbuf, length));
-                    std::copy_n(dst.cbegin(), dst.length(), std::begin(rbuf));
+                    dec_->decrypt(rbuf, length, rbuf, length);
                 }
                 handler(ec, length);
             });
@@ -229,8 +228,7 @@ void LocalSession::async_read(char *buffer, size_t len, Handler handler) {
             [this, handler, buffer](std::error_code ec,
                                     std::size_t length) {
                 if (!ec) {
-                    std::string dst = dec_->decrypt(std::string(buffer, length));
-                    std::copy_n(dst.cbegin(), dst.length(), buffer);
+                    dec_->decrypt(buffer, length, buffer, length);
                 }
                 handler(ec, length);
             });
@@ -241,8 +239,7 @@ void LocalSession::async_write(size_t len, Handler handler) {
 }
 
 void LocalSession::async_write(char *buffer, size_t len, Handler handler) {
-    std::string dst = enc_->encrypt(std::string(buffer, len));
-    std::copy_n(dst.cbegin(), dst.length(), buffer);
+    enc_->encrypt(buffer, len, buffer, len);
     asio::async_write(
             rsocket_, asio::buffer(buffer, len),
             [this, handler, buffer](std::error_code ec,

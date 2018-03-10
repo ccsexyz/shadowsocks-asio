@@ -17,6 +17,8 @@ using CryptoPP::AutoSeededRandomPool;
 using CryptoPP::Exception;
 using CryptoPP::StringSink;
 using CryptoPP::StringSource;
+using CryptoPP::ArraySink;
+using CryptoPP::ArraySource;
 using CryptoPP::StreamTransformationFilter;
 using CryptoPP::AES;
 using CryptoPP::DES;
@@ -41,11 +43,10 @@ public:
             reinterpret_cast<const byte *>(iv_.c_str()), iv_.length());
     }
     std::string getIV() override { return iv_; }
-    std::string encrypt(const std::string &str) override {
-        std::string secret;
-        StringSource(str, true, new StreamTransformationFilter(
-                                    enc_, new StringSink(secret)));
-        return secret;
+    void encrypt(const char *in, std::size_t in_sz, 
+                            char *out, std::size_t out_sz) override {
+        ArraySource((const byte *)in, in_sz, true, new StreamTransformationFilter(
+                                    enc_, new ArraySink((byte *)out, out_sz)));
     }
     std::size_t getIvLen() override { return ivLen; }
 
@@ -64,11 +65,10 @@ public:
             reinterpret_cast<const byte *>(iv.c_str()), iv.length());
     }
     std::size_t getIvLen() override { return ivLen; }
-    std::string decrypt(const std::string &str) override {
-        std::string plain;
-        StringSource(str, true, new StreamTransformationFilter(
-                                    dec_, new StringSink(plain)));
-        return plain;
+    void decrypt(const char *in, std::size_t in_sz, 
+                            char *out, std::size_t out_sz) override {
+        ArraySource((const byte *)in, in_sz, true, new StreamTransformationFilter(
+                                    dec_, new ArraySink((byte *)out, out_sz)));
     }
 
 private:
@@ -90,11 +90,10 @@ public:
             reinterpret_cast<const byte *>(iv_.c_str()), iv_.length());
     }
     std::string getIV() override { return iv_; }
-    std::string encrypt(const std::string &str) override {
-        std::string secret;
-        StringSource(str, true, new StreamTransformationFilter(
-                                    enc_, new StringSink(secret)));
-        return secret;
+    void encrypt(const char *in, std::size_t in_sz, 
+                            char *out, std::size_t out_sz) override {
+        ArraySource((const byte *)in, in_sz, true, new StreamTransformationFilter(
+                                    enc_, new ArraySink((byte *)out, out_sz)));
     }
     std::size_t getIvLen() override { return ivLen; }
 
@@ -113,11 +112,10 @@ public:
             reinterpret_cast<const byte *>(iv.c_str()), iv.length());
     }
     std::size_t getIvLen() override { return ivLen; }
-    std::string decrypt(const std::string &str) override {
-        std::string plain;
-        StringSource(str, true, new StreamTransformationFilter(
-                                    dec_, new StringSink(plain)));
-        return plain;
+    void decrypt(const char *in, std::size_t in_sz, 
+                            char *out, std::size_t out_sz) override {
+        ArraySource((const byte *)in, in_sz, true, new StreamTransformationFilter(
+                                    dec_, new ArraySink((byte *)out, out_sz)));
     }
 
 private:
@@ -139,11 +137,10 @@ public:
             reinterpret_cast<const byte *>(iv_.c_str()), iv_.length());
     }
     std::string getIV() override { return iv_; }
-    std::string encrypt(const std::string &str) override {
-        std::string secret;
-        StringSource(str, true, new StreamTransformationFilter(
-                                    enc_, new StringSink(secret)));
-        return secret;
+    void encrypt(const char *in, std::size_t in_sz, 
+                            char *out, std::size_t out_sz) override {
+        ArraySource((const byte *)in, in_sz, true, new StreamTransformationFilter(
+                                    enc_, new ArraySink((byte *)out, out_sz)));
     }
     std::size_t getIvLen() override { return ivLen; }
 
@@ -162,11 +159,10 @@ public:
             reinterpret_cast<const byte *>(iv.c_str()), iv.length());
     }
     std::size_t getIvLen() override { return ivLen; }
-    std::string decrypt(const std::string &str) override {
-        std::string plain;
-        StringSource(str, true, new StreamTransformationFilter(
-                                    dec_, new StringSink(plain)));
-        return plain;
+    void decrypt(const char *in, std::size_t in_sz, 
+                            char *out, std::size_t out_sz) override {
+        ArraySource((const byte *)in, in_sz, true, new StreamTransformationFilter(
+                                    dec_, new ArraySink((byte *)out, out_sz)));
     }
 
 private:
