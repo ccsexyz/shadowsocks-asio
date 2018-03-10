@@ -8,28 +8,21 @@ void printVersion() {
 }
 
 bool checkDaemon() {
-    if (!IsDaemon) {
+    if (!FLAGS_daemon) {
         return false;
     }
-    if (PidFilePath.empty()) {
-        printf("Cannot daemonize process without pidfile\n");
-        IsDaemon = false;
-        return false;
-    }
-    if (LogFilePath.empty()) {
+    if (FLAGS_log.empty()) {
         printf("You should set the log file\n");
     }
     return true;
 }
 
 void initLogging() {
-    if (!LogFilePath.empty()) {
-        setLogFile(LogFilePath);
+    if (!FLAGS_log.empty()) {
+        setLogFile(FLAGS_log);
     }
-    if (IsVerboseMode) {
+    if (FLAGS_verbose) {
         setLogLevel(VERBOSE);
-    } else if (IsQuietMode) {
-        setLogLevel(WARN);
     } else {
         setLogLevel(INFO);
     }

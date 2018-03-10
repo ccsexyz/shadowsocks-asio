@@ -1,214 +1,123 @@
 #include "config.h"
-#include "json.hpp"
+#include "rapidjson.h"
+#include "document.h"
 
-using json = nlohmann::json;
+using namespace rapidjson;
 
-// bool IsOta;
-bool IsFastOpen;
-bool IsDaemon;
-std::string PidFilePath;
-std::string LogFilePath;
-std::string Username;
-bool IsVerboseMode;
-bool IsQuietMode;
-bool ShowVersion;
-bool ShowHelpMessage;
+DEFINE_string(s, "0.0.0.0", "host name or ip address of your remote server");
+DEFINE_int32(p, 8388, "port number of your remote server");
+DEFINE_string(b, "0.0.0.0", "local address to bind");
+DEFINE_int32(l, 1080, "port number of your local server");
+DEFINE_string(k, "secret", "password of your remote server");
+DEFINE_string(m, "aes-256-cfb", "Encrypt method");
+DEFINE_int32(t, 5, "timeout");
+DEFINE_bool(u, false, "enable udprelay mode");
+DEFINE_string(c, "", "json config path");
+DEFINE_string(log, "", "log file path");
+DEFINE_bool(autoban, false, "Auto ban evil clients");
+DEFINE_bool(daemon, false, "Enable daemon mode");
+DEFINE_bool(verbose, false, "Enable verbose mode");
+
 std::unordered_set<std::string> ForbiddenIPAddresses;
 std::unordered_map<std::string, int> EvilIPAddresses;
 
-void testJson() {
-    auto j = json::parse("{\"hello\":\"world\"}");
-    for (auto it = j.cbegin(); it != j.cend(); ++it) {
-        std::cout << it.key() << ":" << it.value().get<int>() << std::endl;
-    }
+Config::Config() {
+    ServerAddress = FLAGS_s;
+    ServerPort = FLAGS_p;
+    LocalAddress = FLAGS_b;
+    LocalPort = FLAGS_l;
+    Password = FLAGS_k;
+    Method = FLAGS_m;
+    Timeout = FLAGS_t;
+    AutoBan = FLAGS_autoban;    
 }
 
 std::vector<Config> parseCmdline(int argc, char **argv) {
-    std::string ConfigFilePath;
+    gflags::ParseCommandLineFlags(&argc, &argv, true);
     std::vector<Config> configs;
-    std::vector<std::string> cmdlines;
-    for (int i = 1; i < argc; i++) {
-        cmdlines.emplace_back(argv[i]);
-    }
-    cmdlines.emplace_back("");
-    Config config;
-    std::string s;
-    std::unordered_map<std::string, std::function<void()>> handlers = {
-        {"-c", [&] { ConfigFilePath = s; }},
-        {"-s", [&] { config.ServerAddress = s; }},
-        {"-p", [&] { config.ServerPort = (uint16_t)std::stoul(s); }},
-        {"-b", [&] { config.LocalAddress = s; }},
-        {"-l", [&] { config.LocalPort = (uint16_t)std::stoul(s); }},
-        {"-k", [&] { config.Password = s; }},
-        {"-m", [&] { config.Method = s; }},
-        {"-t", [&] { config.Timeout = (uint32_t)std::stoul(s); }},
-        //        {"-a", [&] { config.IsOta = true; }},
-        {"--fast--open", [&] { config.IsFastOpen = true; }},
-        {"--forbidden-ip",
-         [&] {
-             std::string ip = "";
-             for (auto &c : s) {
-                 if (c == ',') {
-                     if (ip != "") {
-                         ForbiddenIPAddresses.insert(ip);
-                     }
-                 } else {
-                     ip += c;
-                 }
-             }
-         }},
-        {"--auto-ban", [&] { config.AutoBan = true; }},
-        {"--prefer-ipv6", [&] { config.PreferIPv6 = true; }},
-        {"-h", [&] { ShowHelpMessage = true; }},
-        {"--help", [&] { ShowHelpMessage = true; }},
-        {"--pid-file", [&] { PidFilePath = s; }},
-        {"--log-file", [&] { LogFilePath = s; }},
-        {"-v", [&] { IsVerboseMode = true; }},
-        {"-vv", [&] { IsVerboseMode = true; }},
-        {"-q", [&] { IsQuietMode = true; }},
-        {"-qq", [&] { IsQuietMode = true; }},
-        {"--version", [&] { ShowVersion = true; }},
-        {"", [&] {}}};
-    std::unordered_set<std::string> ons = {
-        "-a",  "--fast-open", "-h",  "--help",    "--prefer-ipv6", "-v",
-        "-vv", "-q",          "-qq", "--version", "--auto-ban",    ""};
-    auto size = cmdlines.size();
-    for (size_t i = 0; i < size; i++) {
-        auto fit = handlers.find(cmdlines[i]);
-        if (fit != handlers.end()) {
-            if (ons.find(cmdlines[i]) == ons.end()) {
-                s = cmdlines[i + 1];
-                i++;
-            }
-            (fit->second)();
-        }
-    }
-    if (ConfigFilePath.empty() || config != Config()) {
-        configs.emplace_back(std::move(config));
-    }
-    if (ConfigFilePath.empty()) {
+    if (FLAGS_c.empty()) {
+        Config config;
+        configs.emplace_back(config);
         return configs;
     }
-    std::ifstream ifs(ConfigFilePath);
+    std::ifstream ifs(FLAGS_c);
     std::string jsonstr((std::istreambuf_iterator<char>(ifs)),
                         std::istreambuf_iterator<char>());
     if (jsonstr.empty()) {
         return configs;
     }
-    auto j = json::parse(jsonstr);
-    using json_type = decltype(j);
-    if (j.is_null() || (!j.is_object() || !j.is_array())) {
+    Document d;
+    d.Parse(jsonstr.data());
+    if (d.IsNull()) {
         return configs;
     }
-    std::unordered_map<std::string, std::function<void(json_type)>> functors = {
-        {"server",
-         [&](json_type value) {
-             if (value.is_string()) {
-                 auto server = value.get<std::string>();
-                 if (!server.empty()) {
-                     config.ServerAddress = server;
-                 }
-             }
-         }},
-        {"server_port",
-         [&](json_type value) {
-             if (value.is_number_unsigned()) {
-                 auto server_port = value.get<uint32_t>();
-                 if (server_port <= 65536) {
-                     config.ServerPort = server_port;
-                 }
-             }
-         }},
-        {"local_address",
-         [&](json_type value) {
-             if (value.is_string()) {
-                 auto local_address = value.get<std::string>();
-                 if (!local_address.empty()) {
-                     config.LocalAddress = local_address;
-                 }
-             }
-         }},
-        {"local_port",
-         [&](json_type value) {
-             if (value.is_number_unsigned()) {
-                 auto local_port = value.get<uint32_t>();
-                 if (local_port <= 65536) {
-                     config.LocalPort = local_port;
-                 }
-             }
-         }},
-        {"password",
-         [&](json_type value) {
-             if (value.is_string()) {
-                 auto password = value.get<std::string>();
-                 if (!password.empty()) {
-                     config.Password = password;
-                 }
-             }
-         }},
-        {"timeout",
-         [&](json_type value) {
-             if (value.is_number_unsigned()) {
-                 auto timeout = value.get<uint32_t>();
-                 config.Timeout = timeout;
-             }
-         }},
-        {"method",
-         [&](json_type value) {
-             if (value.is_string()) {
-                 auto method = value.get<std::string>();
-                 if (!method.empty()) {
-                     config.Method = method;
-                 }
-             }
-         }},
-        {"fast_open",
-         [&](json_type value) {
-             if (value.is_boolean()) {
-                 auto fast_open = value.get<bool>();
-                 config.IsFastOpen = fast_open;
-             }
-         }},
-        {"autoban",
-         [&](json_type value) {
-             if (value.is_boolean()) {
-                 auto autoban = value.get<bool>();
-                 config.AutoBan = autoban;
-             }
-         }},
-        {"forbidden_ips", [&](json_type value) {
-             if (value.is_array()) {
-                 for (auto it = value.cbegin(); it != value.cend(); ++it) {
-                     auto v = *it;
-                     if (v.is_string()) {
-                         auto ip = v.get<std::string>();
-                         if (!ip.empty()) {
-                             ForbiddenIPAddresses.insert(ip);
-                         }
-                     }
-                 }
-             }
-         }}};
-    auto f = [&](json_type j) {
-        config = Config();
-        for (auto it = j.cbegin(); it != j.cend(); ++it) {
-            auto key = it.key();
-            auto value = it.value();
-            if (functors.find(key) != functors.end()) {
-                functors[key](value);
+    auto f = [&](decltype(d.GetObject()) j) {
+        Config config;
+        std::unordered_map<std::string, std::function<void(bool)>> boolean_handlers;
+        std::unordered_map<std::string, std::function<void(int)>> integer_handlers;
+        std::unordered_map<std::string, std::function<void(const std::string &)>> string_handlers;
+        auto get_int_assigner = [&](const std::string &name, int *pi) {
+            integer_handlers.insert(std::make_pair(name, [&, pi](int i) {
+                *pi = i;
+            }));
+        };
+        auto get_bool_assigner = [&](const std::string &name, bool *pb) {
+            boolean_handlers.insert(std::make_pair(name, [&, pb](bool b) {
+                *pb = b;
+            }));
+        };
+        auto get_string_assigner = [&](const std::string &name, std::string *ps) {
+            string_handlers.insert(std::make_pair(name, [&, ps](const std::string &s) {
+                *ps = s;
+            }));
+        };
+        int ServerPort = config.ServerPort;
+        int LocalPort = config.LocalPort;
+        int Timeout = config.Timeout;
+        get_string_assigner("server", &config.ServerAddress);
+        get_int_assigner("server_port", &ServerPort);
+        get_string_assigner("local_address", &config.LocalAddress);
+        get_int_assigner("local_port", &LocalPort);
+        get_string_assigner("password", &config.Password);
+        get_string_assigner("method", &config.Method);
+        get_int_assigner("timeout", &Timeout);
+        get_bool_assigner("autoban", &config.AutoBan);
+        for (auto &m : j) {
+            if (!m.name.IsString()) {
+                continue;
+            }
+            auto key = m.name.GetString();
+            auto &value = m.value;
+            if (value.IsBool()) {
+                auto it = boolean_handlers.find(key);
+                if (it != boolean_handlers.end()) {
+                    (it->second)(value.GetBool());
+                }
+            } else if (value.IsString()) {
+                auto it = string_handlers.find(key);
+                if (it != string_handlers.end()) {
+                    (it->second)(value.GetString());
+                }
+            } else if (value.IsNumber()) {
+                auto it = integer_handlers.find(key);
+                if (it != integer_handlers.end()) {
+                    (it->second)(value.GetInt());
+                }
             }
         }
-        configs.emplace_back(std::move(config));
+        config.ServerPort = ServerPort;
+        config.LocalPort = LocalPort;
+        config.Timeout = Timeout;
+        configs.emplace_back(config);
     };
-    if (j.is_array()) {
-        for (auto it = j.cbegin(); it != j.cend(); ++it) {
-            auto v = *it;
-            if (v.is_object()) {
-                f(v);
+    if (d.IsArray()) {
+        for (auto &o : d.GetArray()) {
+            if (o.IsObject()) {
+                f(o.GetObject());
             }
         }
-    } else {
-        f(j);
+    } else if (d.IsObject()) {
+        f(d.GetObject());
     }
     return configs;
 }
