@@ -101,7 +101,7 @@ void ServerSession::async_write(std::size_t len, Handler handler) {
 void ServerSession::doReadIV() {
     auto self = shared_from_this();
     async_read_with_timeout(
-        enc_->getIvLen(), boost::posix_time::seconds(4),
+        enc_->getIvLen(), std::chrono::seconds(4),
         [this, self](std::error_code ec, std::size_t length) {
             if (ec) {
                 return;
@@ -115,7 +115,7 @@ void ServerSession::doReadIV() {
 void ServerSession::doGetRequest() {
     auto self = shared_from_this();
     async_read_with_timeout_1(
-        1, boost::posix_time::seconds(1),
+        1, std::chrono::seconds(1),
         [this, self](std::error_code ec, std::size_t length) {
             if (ec) {
                 destroyLater();
@@ -177,7 +177,7 @@ void ServerSession::doGetIPv4Request() {
 void ServerSession::doGetIPv6Request() {
     auto self = shared_from_this();
     async_read_with_timeout_1(
-        lenIPv6 + lenPort, boost::posix_time::seconds(1),
+        lenIPv6 + lenPort, std::chrono::seconds(1),
         [this, self](std::error_code ec, std::size_t length) {
             if (ec) {
                 return;
@@ -198,7 +198,7 @@ void ServerSession::doGetDmRequest() {
     LOG_TRACE
     auto self = shared_from_this();
     async_read_with_timeout_1(
-        1, boost::posix_time::seconds(1),
+        1, std::chrono::seconds(1),
         [this, self](std::error_code ec, std::size_t length) {
             if (ec) {
                 return;
@@ -206,7 +206,7 @@ void ServerSession::doGetDmRequest() {
             LOG_TRACE
             std::cout << (unsigned char)buf[0] + 2 << std::endl;
             async_read_with_timeout_1(
-                (unsigned char)buf[0] + 2, boost::posix_time::seconds(1),
+                (unsigned char)buf[0] + 2, std::chrono::seconds(1),
                 [this, self](std::error_code ec, std::size_t length) {
                     if (ec || length < 2) {
                         return;
@@ -327,10 +327,10 @@ ServerSession::~ServerSession() {
 }
 
 void ServerSession::async_read_with_timeout(std::size_t length,
-                                            boost::posix_time::time_duration td,
+                                            asio::high_resolution_timer::duration td,
                                             Handler handler) {
     std::weak_ptr<ServerSession> wss(shared_from_this());
-    auto dt = std::make_shared<asio::deadline_timer>(service_, td);
+    auto dt = std::make_shared<asio::high_resolution_timer>(service_, td);
     dt->async_wait([dt, wss, this](const std::error_code &ec) {
         if (!wss.expired()) {
             std::error_code errc = ec;
@@ -348,7 +348,7 @@ void ServerSession::async_read_with_timeout(std::size_t length,
 }
 
 void ServerSession::async_read_with_timeout_1(
-    std::size_t length, boost::posix_time::time_duration td, Handler handler) {
+    std::size_t length, asio::high_resolution_timer::duration td, Handler handler) {
     async_read_with_timeout(
         length, td,
         [handler, this](std::error_code ec, std::size_t length) {

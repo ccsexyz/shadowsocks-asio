@@ -1,9 +1,8 @@
 cmake_minimum_required(VERSION 3.5)
 project(shadowsocks_asio)
 
-#SET (CMAKE_C_COMPILER             "/usr/bin/clang")
-#SET (CMAKE_CXX_COMPILER             "/usr/bin/clang++")
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
+set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g -DASIO_STANDALONE -DBOOST_COROUTINES_NO_DEPRECATION_WARNING")
 include_directories("${CMAKE_SOURCE_DIR}/asio/asio/include")
 include_directories("${CMAKE_SOURCE_DIR}/json/src")
 include_directories("${CMAKE_SOURCE_DIR}/rapidjson/include/rapidjson")

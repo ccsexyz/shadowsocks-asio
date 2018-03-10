@@ -172,8 +172,8 @@ void UdpServer::doRecvDataFromRemote(asio::ip::udp::endpoint ep,
 
 void UdpServer::recvDataFromRemote(asio::ip::udp::endpoint ep) {
     auto self = shared_from_this();
-    auto dt = std::make_shared<asio::deadline_timer>(
-        service_, boost::posix_time::seconds(16));
+    auto dt = std::make_shared<asio::high_resolution_timer>(
+        service_, std::chrono::seconds(16));
     auto it = sessions_.find(ep);
     auto &session = it->second;
     session.usocket_.async_receive_from(

@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <arpa/inet.h>
 #include "asio.hpp"
+#include "asio/high_resolution_timer.hpp"
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
@@ -17,6 +18,8 @@
 #include <tuple>
 #include <type_traits>
 #include <unistd.h>
+#include <map>
+#include <chrono>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -47,7 +50,7 @@ void initLogging();
 bool checkAddress(std::string address);
 
 void runAfter(asio::io_service &io_service,
-              boost::posix_time::time_duration td, functor f);
+              asio::high_resolution_timer::duration td, functor f);
 
 std::size_t getRandomNumber();
 

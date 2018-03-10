@@ -27,8 +27,8 @@ bool checkAddress(std::string address) {
 }
 
 void runAfter(asio::io_service &io_service,
-              boost::posix_time::time_duration td, functor f) {
-    auto dt = std::make_shared<asio::deadline_timer>(io_service, td);
+              asio::high_resolution_timer::duration td, functor f) {
+    auto dt = std::make_shared<asio::high_resolution_timer>(io_service, td);
     dt->async_wait([dt, f](const std::error_code &) { f(); });
 }
 
@@ -47,5 +47,5 @@ void plusOneSecond(asio::io_service &service,
     } while (x < 3 || x > 14);
     VLOG(1) << "续了" << n << "秒";
     auto socket = std::make_shared<asio::ip::tcp::socket>(std::move(s));
-    runAfter(service, boost::posix_time::seconds(n), [socket] {});
+    runAfter(service, std::chrono::seconds(n), [socket] {});
 }

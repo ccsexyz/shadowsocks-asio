@@ -18,10 +18,10 @@ private:
     void async_write(std::size_t len, Handler handler);
     void async_write(char *buffer, std::size_t len, Handler handler);
     void async_read_with_timeout(std::size_t length,
-                                 boost::posix_time::time_duration td,
+                                 asio::high_resolution_timer::duration td,
                                  Handler handler);
     void async_read_with_timeout_1(std::size_t length,
-                                   boost::posix_time::time_duration td,
+                                   asio::high_resolution_timer::duration td,
                                    Handler handler);
 
 private:
