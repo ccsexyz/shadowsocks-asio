@@ -117,7 +117,7 @@ void UdpServer::sendDataFromLocal(asio::ip::udp::endpoint ep,
                                   std::string header, char *data,
                                   std::size_t len) {
     auto self = shared_from_this();
-    info("[udp] %s:%d", ep.address().to_string().c_str(), static_cast<int>(ep.port()));
+    LOG(INFO) << "[udp] " << ep.address().to_string() << ":" << ep.port();
     auto it = sessions_.find(endpoint_);
     if (it == sessions_.end()) {
         sessions_.emplace(endpoint_,

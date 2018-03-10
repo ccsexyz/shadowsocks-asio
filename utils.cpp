@@ -17,17 +17,6 @@ bool checkDaemon() {
     return true;
 }
 
-void initLogging() {
-    if (!FLAGS_log.empty()) {
-        setLogFile(FLAGS_log);
-    }
-    if (FLAGS_verbose) {
-        setLogLevel(VERBOSE);
-    } else {
-        setLogLevel(INFO);
-    }
-}
-
 bool checkAddress(std::string address) {
     auto it = ForbiddenIPAddresses.find(address);
     if (it == ForbiddenIPAddresses.end()) {
@@ -56,7 +45,7 @@ void plusOneSecond(asio::io_service &service,
         x = getRandomNumber() % 16 + 1;
         n += x;
     } while (x < 3 || x > 14);
-    verbose("续了%lu秒", n);
+    VLOG(1) << "续了" << n << "秒";
     auto socket = std::make_shared<asio::ip::tcp::socket>(std::move(s));
     runAfter(service, boost::posix_time::seconds(n), [socket] {});
 }

@@ -117,7 +117,7 @@ void LocalSession::doSocks5HandleIPv4() {
                         ntohl(*reinterpret_cast<long *>(buf + 4)));
                 auto port = ntohs(*reinterpret_cast<uint16_t *>(buf + 4 + lenIPv4));
                 auto header = std::string(buf + 3, 1 + lenIPv4 + lenPort);
-                info("connect %s:%d", address.to_string().c_str(), static_cast<int>(port));
+                LOG(INFO) << "connect " << address.to_string() << ":" << port;
                 doEstablish(header);
             });
 }
@@ -135,7 +135,7 @@ void LocalSession::doSocks5HandleIPv6() {
                 auto address = asio::ip::address_v6(bytes);
                 auto port = ntohs(*reinterpret_cast<uint16_t *>(buf + 4 + lenIPv6));
                 auto header = std::string(buf + 3, 1 + lenIPv6 + lenPort);
-                info("connect %s:%d", address.to_string().c_str(), static_cast<int>(port));
+                LOG(INFO) << "connect " << address.to_string() << ":" << port;
                 doEstablish(header);
             });
 }
@@ -152,7 +152,7 @@ void LocalSession::doSocks5HandleDm() {
                 std::string address(buf + 5, len);
                 auto port = ntohs(*reinterpret_cast<uint16_t *>(buf + 5 + len));
                 auto header = std::string(buf + 3, len + 4);
-                info("connect %s:%d", address.c_str(), static_cast<int>(port));
+                LOG(INFO) << "connect " << address << ":" << port;
                 doEstablish(header);
             });
 }

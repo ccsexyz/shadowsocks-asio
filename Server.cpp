@@ -135,7 +135,7 @@ void ServerSession::doGetRequest() {
                 break;
             default:
                 approve = false;
-                info("incorrect header from %s", address.c_str());
+                LOG(INFO) << "incorrect header from " << address;
                 break;
             }
             if (config_.AutoBan == false) {
@@ -221,7 +221,7 @@ void ServerSession::doGetDmRequest() {
 }
 
 void ServerSession::doEstablish(std::string name, std::string port) {
-    info("connect %s:%s", name.c_str(), port.c_str());
+    LOG(INFO) << "connect " << name << ":" << port;
     LOG_TRACE
     auto self = shared_from_this();
     asio::ip::tcp::resolver::query query(name, port);

@@ -23,7 +23,7 @@
 #include <vector>
 
 #include "gflags/gflags.h"
-#include "Logger.h"
+#include "glog/logging.h"
 
 using functor = std::function<void()>;
 
