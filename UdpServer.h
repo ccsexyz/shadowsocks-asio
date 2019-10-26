@@ -7,9 +7,14 @@
 struct UdpSession final {
 public:
     UdpSession(asio::ip::udp::socket &&socket)
-        : usocket_(std::move(socket)) {}
+        : usocket_(std::move(socket))
+    {
+    }
     UdpSession(const UdpSession &) = delete;
-    UdpSession(UdpSession &&u) : usocket_(std::move(u.usocket_)) {}
+    UdpSession(UdpSession &&u)
+        : usocket_(std::move(u.usocket_))
+    {
+    }
     char buf[65536];
     char rbuf[65536];
     asio::ip::udp::socket usocket_;
@@ -18,22 +23,21 @@ public:
 
 class UdpServer final : public std::enable_shared_from_this<UdpServer> {
 public:
-    UdpServer(asio::io_service &io_service, const Config &config);
+    UdpServer(asio::io_service &io_service, const config &config);
     void run();
 
 private:
     void doReceive();
     void handleReceive(std::error_code ec, std::size_t length);
-    void sendDataFromLocal(asio::ip::udp::endpoint ep,
-                           std::string header, char *data, std::size_t len);
+    void sendDataFromLocal(
+        asio::ip::udp::endpoint ep, std::string header, char *data, std::size_t len);
     void recvDataFromRemote(asio::ip::udp::endpoint ep);
-    void doRecvDataFromRemote(asio::ip::udp::endpoint ep,
-                              std::error_code ec, std::size_t length);
+    void doRecvDataFromRemote(asio::ip::udp::endpoint ep, std::error_code ec, std::size_t length);
 
 private:
     char buf[65536];
     char rbuf[65536];
-    Config config_;
+    config config_;
     asio::io_service &service_;
     asio::ip::udp::socket usocket_;
     asio::ip::udp::endpoint endpoint_;

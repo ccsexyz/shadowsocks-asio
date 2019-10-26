@@ -6,8 +6,7 @@
 
 class LocalSession final : public std::enable_shared_from_this<LocalSession> {
 public:
-    LocalSession(asio::io_service &io_service,
-                 asio::ip::tcp::socket &&socket, Config &config);
+    LocalSession(asio::io_service &io_service, asio::ip::tcp::socket &&socket, config &config);
     void run();
 
 private:
@@ -29,9 +28,9 @@ private:
     void doPipe2();
 
 private:
-    char buf[4096];
-    char rbuf[16384];
-    Config &config_;
+    char buf[2048];
+    char rbuf[2048];
+    config &config_;
     std::unique_ptr<BaseEncrypter> enc_;
     std::unique_ptr<BaseDecrypter> dec_;
     asio::io_service &service_;
@@ -42,14 +41,14 @@ private:
 
 class Local final : public std::enable_shared_from_this<Local> {
 public:
-    Local(asio::io_service &io_service, const Config &config);
+    Local(asio::io_service &io_service, const config &config);
     void run();
 
 private:
     void doAccept();
 
 private:
-    Config config_;
+    config config_;
     asio::io_service &service_;
     asio::ip::tcp::socket socket_;
     asio::ip::tcp::acceptor acceptor_;

@@ -6,8 +6,7 @@
 
 class ServerSession final : public std::enable_shared_from_this<ServerSession> {
 public:
-    ServerSession(asio::io_service &io_service,
-                  asio::ip::tcp::socket &&socket, Config &config);
+    ServerSession(asio::io_service &io_service, asio::ip::tcp::socket &&socket, config &config);
     ~ServerSession();
     void run();
 
@@ -17,12 +16,10 @@ private:
     void async_read(char *buffer, std::size_t len, Handler handler);
     void async_write(std::size_t len, Handler handler);
     void async_write(char *buffer, std::size_t len, Handler handler);
-    void async_read_with_timeout(std::size_t length,
-                                 asio::high_resolution_timer::duration td,
-                                 Handler handler);
-    void async_read_with_timeout_1(std::size_t length,
-                                   asio::high_resolution_timer::duration td,
-                                   Handler handler);
+    void async_read_with_timeout(
+        std::size_t length, asio::high_resolution_timer::duration td, Handler handler);
+    void async_read_with_timeout_1(
+        std::size_t length, asio::high_resolution_timer::duration td, Handler handler);
 
 private:
     void doReadIV();
@@ -40,7 +37,7 @@ private:
     bool destroyLater_ = true;
     char buf[4096];
     char rbuf[16384];
-    Config &config_;
+    config &config_;
     std::unique_ptr<BaseEncrypter> enc_;
     std::unique_ptr<BaseDecrypter> dec_;
     asio::io_service &service_;
@@ -51,14 +48,14 @@ private:
 
 class Server final : public std::enable_shared_from_this<Server> {
 public:
-    Server(asio::io_service &io_service, const Config &config);
+    Server(asio::io_service &io_service, const config &config);
     void run();
 
 private:
     void doAccept();
 
 private:
-    Config config_;
+    config config_;
     asio::io_service &service_;
     asio::ip::tcp::socket socket_;
     asio::ip::tcp::acceptor acceptor_;

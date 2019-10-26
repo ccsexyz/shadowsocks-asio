@@ -7,9 +7,6 @@
 [submodule "rapidjson"]
 	path = rapidjson
 	url = https://github.com/Tencent/rapidjson
-[submodule "gflags"]
-	path = gflags
-	url = https://github.com/gflags/gflags
-[submodule "glog"]
-	path = glog
-	url = https://github.com/google/glog
+[submodule "snippets"]
+	path = snippets
+	url = https://github.com/ccsexyz/snippets

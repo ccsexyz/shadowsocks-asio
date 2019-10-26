@@ -3,29 +3,30 @@
 
 #include "utils.h"
 
-DECLARE_string(log);
-DECLARE_bool(daemon);
-DECLARE_bool(verbose);
-
 extern std::unordered_set<std::string> ForbiddenIPAddresses;
 extern std::unordered_map<std::string, int> EvilIPAddresses;
 
-class Config final {
-public:
-    Config();
-    std::string ServerAddress;
-    std::uint16_t ServerPort;
-    std::string LocalAddress;
-    std::uint16_t LocalPort;
-    std::string Password;
-    std::string Method;
-    std::uint32_t Timeout;
-    bool AutoBan;
-
-    bool IsFastOpen = false;
-    bool PreferIPv6 = false;
+struct config {
+    std::string remote_addr;
+    int remote_port;
+    std::string local_addr;
+    int local_port;
+    std::string password;
+    std::string method;
+    int timeout;
+    int udprelay;
+    std::string config;
+    std::string log;
+    int autoban;
+    int daemon;
+    int verbose;
+    int prefer_ipv6;
+    int trim_memory_interval;
 };
 
+extern config g_cfg;
+
+/*
 static inline bool operator==(const Config &left, const Config &right) {
     return left.ServerAddress == right.ServerAddress &&
            left.ServerPort == right.ServerPort &&
@@ -40,8 +41,9 @@ static inline bool operator==(const Config &left, const Config &right) {
 static inline bool operator!=(const Config &left, const Config &right) {
     return !(right == left);
 }
+*/
 
-std::vector<Config> parseCmdline(int argc, char **argv);
+std::vector<config> parseCmdline(int argc, char **argv);
 
 void testJson();
 

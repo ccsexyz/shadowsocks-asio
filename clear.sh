@@ -4,11 +4,7 @@ cd cryptopp
 git checkout . && git clean -xdf 
 cd .. 
 
-cd glog
-git checkout . && git clean -xdf 
-cd .. 
-
-cd gflags 
+cd snippets
 git checkout . && git clean -xdf 
 cd .. 
 
